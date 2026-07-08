@@ -134,13 +134,40 @@ export const callNvidiaProxy = createServerFn({ method: "POST" })
     return callNvidiaApi(payload.prompt, payload.systemPrompt);
   });
 
-/** Strip markdown code fences the model sometimes wraps JSON in */
-function stripFences(raw: string): string {
-  return raw
+/** Clean and parse JSON array or object from raw LLM output, bypassing markdown fences and conversation preambles */
+function cleanAndParseJson<T>(raw: string): T {
+  const cleaned = raw.trim();
+  try {
+    return JSON.parse(cleaned) as T;
+  } catch (e) {}
+
+  let stripped = cleaned
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/\s*```$/, "")
     .trim();
+  try {
+    return JSON.parse(stripped) as T;
+  } catch (e) {}
+
+  const firstBracket = stripped.indexOf("[");
+  const lastBracket = stripped.lastIndexOf("]");
+  if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
+    try {
+      return JSON.parse(stripped.slice(firstBracket, lastBracket + 1)) as T;
+    } catch (e) {}
+  }
+
+  const firstBrace = stripped.indexOf("{");
+  const lastBrace = stripped.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    try {
+      return JSON.parse(stripped.slice(firstBrace, lastBrace + 1)) as T;
+    } catch (e) {}
+  }
+
+  throw new Error(`Failed to extract valid JSON from LLM response: ${raw.slice(0, 300)}`);
 }
+
 
 // ---------------------------------------------------------------------------
 // Parse PDF & Chunk
@@ -203,8 +230,6 @@ ${extractedText.slice(0, 6000)}`;
         "You are a structured-data extraction assistant. Output only valid JSON with no markdown.",
       );
 
-      const cleaned = stripFences(rawJson);
-
       let parsed: {
         nodes: Record<
           string,
@@ -220,12 +245,11 @@ ${extractedText.slice(0, 6000)}`;
       };
 
       try {
-        parsed = JSON.parse(cleaned) as typeof parsed;
-      } catch {
-        throw new Error(
-          `NVIDIA returned invalid JSON. First 300 chars: ${cleaned.slice(0, 300)}`,
-        );
+        parsed = cleanAndParseJson<typeof parsed>(rawJson);
+      } catch (e: any) {
+        throw new Error(`NVIDIA returned invalid JSON. Error: ${e.message}`);
       }
+
 
       // -----------------------------------------------------------------------
       // 2. Persist syllabus tree + chunks to Firebase
@@ -359,7 +383,7 @@ No markdown, no code fences, no explanation.`;
         if (count <= 0) return;
         try {
           const raw = await callNvidiaApi(prompt);
-          const items = JSON.parse(stripFences(raw)) as T[];
+          const items = cleanAndParseJson<T[]>(raw);
           for (const item of items.slice(0, count)) {
             await saveFn(item);
             producedCount++;

@@ -43,7 +43,13 @@ export const Route = createFileRoute("/_authenticated/admin/generate")({
 });
 
 type DocumentItem = { title: string };
-type SyllabusNode = { title: string };
+type SyllabusNode = {
+  title: string;
+  kind: "unit" | "topic";
+  parentId: string | null;
+  order: number;
+};
+
 
 type JobItem = {
   status: "queued" | "running" | "done" | "failed";
