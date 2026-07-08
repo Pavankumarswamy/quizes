@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { onValue, ref, push, set, remove, serverTimestamp } from "firebase/database";
+import { onValue, ref, push, set, remove, update, serverTimestamp } from "firebase/database";
 import { toast } from "sonner";
 import {
   Plus,
@@ -17,6 +17,7 @@ import {
   Code,
   CheckSquare,
   Sparkles,
+  Pencil,
 } from "lucide-react";
 import { getFirebaseDb } from "@/lib/firebase";
 import { useAuth } from "@/features/auth/AuthProvider";
@@ -376,13 +377,13 @@ function QuestionsAdmin() {
     if (q.type === "mcq" || q.type === "multi") {
       setOptions(q.options ?? []);
     } else if (q.type === "fill") {
-      setFillAnswer(q.answer);
+      setFillAnswer((q.answer as string) ?? "");
     } else if (q.type === "tf") {
-      setTfAnswer(q.answer);
+      setTfAnswer((q.answer as "true" | "false") ?? "true");
     } else if (q.type === "match") {
       const pairs: MatchPair[] = [];
       q.matchLeft?.forEach((left, i) => {
-        const rightId = q.answer[left.id];
+        const rightId = (q.answer as Record<string, string>)?.[left.id];
         const right = q.matchRight?.find((r) => r.id === rightId);
         pairs.push({ leftText: left.text, rightText: right?.text ?? "" });
       });
@@ -1094,13 +1095,13 @@ function QuestionsAdmin() {
               {bulkSelectedIds.length > 0 && (
                 <div className="flex gap-1.5">
                   <Button
-                    size="xs"
+                    size="sm"
                     onClick={handleBulkApprove}
                     className="bg-emerald-600 hover:bg-emerald-600/90 text-white border-transparent"
                   >
                     Approve Selected ({bulkSelectedIds.length})
                   </Button>
-                  <Button size="xs" variant="destructive" onClick={handleBulkReject}>
+                  <Button size="sm" variant="destructive" onClick={handleBulkReject}>
                     Reject Selected ({bulkSelectedIds.length})
                   </Button>
                 </div>
