@@ -36,39 +36,58 @@ async function callNvidiaApi(prompt: string, systemPrompt?: string): Promise<str
 
   if (!response.ok) {
     const errText = await response.text();
-    throw new Error(`NVIDIA API error ${response.status}: ${errText}`);
+    throw new Error(`NVIDIA API error ${response.status}: ${errText.slice(0, 400)}`);
   }
 
   const data = (await response.json()) as {
     choices: { message: { content: string } }[];
   };
 
-  return data.choices[0]?.message?.content ?? "";
+  const content = data.choices[0]?.message?.content ?? "";
+  if (!content) throw new Error("NVIDIA API returned empty content");
+  return content;
+}
+
+/** Strip markdown code fences the model sometimes wraps JSON in */
+function stripFences(raw: string): string {
+  return raw
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/, "")
+    .trim();
 }
 
 // ---------------------------------------------------------------------------
-// Parse PDF & Chunk  — now accepts extractedText from browser PDF.js
+// Parse PDF & Chunk
+// The extractedText is stored in Firebase by the client BEFORE calling this.
+// The server function reads it from Firebase to avoid large RPC payloads.
 // ---------------------------------------------------------------------------
 type ParseParams = {
   docId: string;
-  extractedText: string; // full text from browser-side PDF.js extraction
-  totalPages: number;
 };
 
 export const parsePdfAndChunk = createServerFn({ method: "POST" })
   .validator((d: ParseParams) => d)
   .handler(async ({ data }) => {
-    const { docId, extractedText, totalPages } = data;
+    const { docId } = data;
     const db = getFirebaseDb();
 
     try {
       await update(ref(db, `documents/${docId}`), { status: "running" });
 
+      // Read the extracted text that the client stored in Firebase
+      const textSnap = await get(ref(db, `documents/${docId}/extractedText`));
+      if (!textSnap.exists()) {
+        throw new Error("Extracted text not found in Firebase. Please re-upload the PDF.");
+      }
+      const extractedText = textSnap.val() as string;
+
+      const totalPagesSnap = await get(ref(db, `documents/${docId}/pages`));
+      const totalPages = totalPagesSnap.exists() ? (totalPagesSnap.val() as number) : 0;
+
       // -----------------------------------------------------------------------
       // 1. Ask NVIDIA to organise the text into a structured syllabus tree
       // -----------------------------------------------------------------------
-      const organisationPrompt = `
-You are an expert curriculum designer. Given the following raw PDF text, extract a structured syllabus with Units and Topics.
+      const organisationPrompt = `You are an expert curriculum designer. Given the following raw PDF text, extract a structured syllabus with Units and Topics.
 
 Return ONLY valid JSON — no markdown, no code fences, no explanation.
 
@@ -84,23 +103,21 @@ The JSON must match this exact shape:
 }
 
 Rules:
-- Create 2–6 units and 3–15 topics depending on the content richness.
-- Each topic must have 1–3 related text chunks (200–400 words each) drawn from the PDF text.
-- Use real content from the PDF — do NOT make up content.
+- Create 2-6 units and 3-15 topics depending on content richness.
+- Each topic must have 1-3 related text chunks (200-400 words each) drawn from the PDF text.
+- Use real content from the PDF text only. Do NOT invent content.
 - chunk IDs must be referenced in the matching topic's chunkIds array.
-- Keep node and chunk IDs sequential (node_1, node_2 … and chunk_1, chunk_2 …).
+- Keep node and chunk IDs sequential: node_1, node_2... chunk_1, chunk_2...
 
-PDF TEXT (first 8000 chars):
-${extractedText.slice(0, 8000)}
-`;
+PDF TEXT:
+${extractedText.slice(0, 6000)}`;
 
-      const rawJson = await callNvidiaApi(organisationPrompt, "You are a structured-data extraction assistant. Output only valid JSON.");
+      const rawJson = await callNvidiaApi(
+        organisationPrompt,
+        "You are a structured-data extraction assistant. Output only valid JSON with no markdown.",
+      );
 
-      // Parse the JSON — strip any stray markdown fences if the model adds them
-      const cleaned = rawJson
-        .replace(/```json/g, "")
-        .replace(/```/g, "")
-        .trim();
+      const cleaned = stripFences(rawJson);
 
       let parsed: {
         nodes: Record<
@@ -119,7 +136,9 @@ ${extractedText.slice(0, 8000)}
       try {
         parsed = JSON.parse(cleaned) as typeof parsed;
       } catch {
-        throw new Error(`NVIDIA returned invalid JSON. Raw: ${cleaned.slice(0, 300)}`);
+        throw new Error(
+          `NVIDIA returned invalid JSON. First 300 chars: ${cleaned.slice(0, 300)}`,
+        );
       }
 
       // -----------------------------------------------------------------------
@@ -128,6 +147,9 @@ ${extractedText.slice(0, 8000)}
       await set(ref(db, `syllabusTrees/${docId}/nodes`), parsed.nodes);
       await set(ref(db, `docChunks/${docId}`), parsed.chunks);
 
+      // Remove the raw extracted text from Firebase (no longer needed)
+      await set(ref(db, `documents/${docId}/extractedText`), null);
+
       await update(ref(db, `documents/${docId}`), {
         status: "parsed",
         pages: totalPages,
@@ -135,17 +157,18 @@ ${extractedText.slice(0, 8000)}
 
       return { success: true };
     } catch (err: unknown) {
-      console.error("parsePdfAndChunk error:", err);
-      await update(ref(db, `documents/${docId}`), { status: "failed" });
-      return {
-        success: false,
-        error: err instanceof Error ? err.message : "Parsing failed",
-      };
+      const message = err instanceof Error ? err.message : "Parsing failed";
+      console.error("[parsePdfAndChunk] error:", message);
+      await update(ref(db, `documents/${docId}`), {
+        status: "failed",
+        lastError: message,
+      });
+      return { success: false, error: message };
     }
   });
 
 // ---------------------------------------------------------------------------
-// Generate AI Questions  — uses NVIDIA API with real chunk content
+// Generate AI Questions — uses NVIDIA API with real chunk content
 // ---------------------------------------------------------------------------
 type GenerateParams = {
   jobId: string;
@@ -175,12 +198,10 @@ export const generateAiQuestions = createServerFn({ method: "POST" })
     try {
       await update(ref(db, `generationJobs/${jobId}`), { status: "running" });
 
-      // Fetch job parameters
       const jobSnap = await get(ref(db, `generationJobs/${jobId}`));
       if (!jobSnap.exists()) throw new Error("Job parameters not found");
       const job = jobSnap.val() as JobData;
 
-      // Fetch categories for tagging
       const catSnap = await get(ref(db, "categories"));
       let defaultCatId = "";
       if (catSnap.exists()) {
@@ -189,9 +210,7 @@ export const generateAiQuestions = createServerFn({ method: "POST" })
 
       const difficulty = job.difficulty === "mixed" ? "medium" : job.difficulty;
 
-      // ------------------------------------------------------------------
       // Gather chunk text for the selected nodes
-      // ------------------------------------------------------------------
       const chunksSnap = await get(ref(db, `docChunks/${job.docId}`));
       const allChunks = chunksSnap.exists()
         ? (chunksSnap.val() as Record<string, { text: string; page: number; nodeIds: string[] }>)
@@ -199,87 +218,73 @@ export const generateAiQuestions = createServerFn({ method: "POST" })
 
       const nodesSnap = await get(ref(db, `syllabusTrees/${job.docId}/nodes`));
       const allNodes = nodesSnap.exists()
-        ? (nodesSnap.val() as Record<
-            string,
-            { title: string; kind: string; chunkIds?: string[] }
-          >)
+        ? (nodesSnap.val() as Record<string, { title: string; kind: string; chunkIds?: string[] }>)
         : {};
 
-      // Collect all chunkIds belonging to the selected nodeIds
       const relevantChunkIds = new Set<string>();
       for (const nodeId of job.nodeIds) {
         const node = allNodes[nodeId];
-        if (node?.chunkIds) {
-          node.chunkIds.forEach((cid) => relevantChunkIds.add(cid));
-        }
+        if (node?.chunkIds) node.chunkIds.forEach((cid) => relevantChunkIds.add(cid));
       }
 
-      // Assemble context text from those chunks (cap at ~6000 chars)
       let contextText = "";
       for (const cid of relevantChunkIds) {
         const chunk = allChunks[cid];
         if (chunk) {
           contextText += `\n\n${chunk.text}`;
-          if (contextText.length > 6000) break;
+          if (contextText.length > 5000) break;
         }
       }
+      if (!contextText.trim()) contextText = "General knowledge on the subject.";
 
-      if (!contextText.trim()) {
-        contextText = "General knowledge on the subject.";
-      }
-
-      // ------------------------------------------------------------------
-      // Build the question-generation prompt
-      // ------------------------------------------------------------------
-      const buildPrompt = (
-        type: string,
-        count: number,
-        extraInstructions: string,
-      ) => `
-You are an expert exam question setter. Based on the following content, generate exactly ${count} ${type} question(s).
+      const buildPrompt = (type: string, count: number, schema: string) =>
+        `Based on this content, generate exactly ${count} ${type} question(s).
 
 CONTENT:
 ${contextText.slice(0, 4000)}
 
 DIFFICULTY: ${difficulty}
 
-${extraInstructions}
+Return ONLY a valid JSON array matching this schema:
+${schema}
 
-Return ONLY a valid JSON array — no markdown, no code fences. Each item must follow the schema for "${type}".
-`;
+No markdown, no code fences, no explanation.`;
 
       let producedCount = 0;
 
-      // ------------------------------------------------------------------
+      // Helper: call NVIDIA, parse JSON array safely
+      async function generateAndSave<T>(
+        prompt: string,
+        count: number,
+        saveFn: (item: T) => Promise<void>,
+      ) {
+        if (count <= 0) return;
+        try {
+          const raw = await callNvidiaApi(prompt);
+          const items = JSON.parse(stripFences(raw)) as T[];
+          for (const item of items.slice(0, count)) {
+            await saveFn(item);
+            producedCount++;
+          }
+        } catch (e) {
+          console.error(`[generateAiQuestions] failed for batch:`, e);
+        }
+      }
+
       // MCQ
-      // ------------------------------------------------------------------
-      if ((job.counts.mcq || 0) > 0) {
-        const prompt = buildPrompt(
+      await generateAndSave<{
+        text: string;
+        options: { id: string; text: string; correct: boolean }[];
+        answer: string;
+        explanation: string;
+      }>(
+        buildPrompt(
           "MCQ",
-          job.counts.mcq,
-          `Each MCQ item must be:
-{
-  "text": "Question text here?",
-  "options": [
-    {"id":"a","text":"Option A","correct":true},
-    {"id":"b","text":"Option B","correct":false},
-    {"id":"c","text":"Option C","correct":false},
-    {"id":"d","text":"Option D","correct":false}
-  ],
-  "answer": "a",
-  "explanation": "Why A is correct."
-}`,
-        );
-
-        const raw = await callNvidiaApi(prompt);
-        const items = JSON.parse(raw.replace(/```json|```/g, "").trim()) as {
-          text: string;
-          options: { id: string; text: string; correct: boolean }[];
-          answer: string;
-          explanation: string;
-        }[];
-
-        for (const item of items.slice(0, job.counts.mcq)) {
+          job.counts.mcq || 0,
+          `[{"text":"?","options":[{"id":"a","text":"...","correct":true},{"id":"b","text":"...","correct":false},{"id":"c","text":"...","correct":false},{"id":"d","text":"...","correct":false}],"answer":"a","explanation":"..."}]`,
+        ),
+        job.counts.mcq || 0,
+        async (item) => {
           const qRef = push(ref(db, "questionBank"));
           await set(qRef, {
             type: "mcq",
@@ -297,40 +302,23 @@ Return ONLY a valid JSON array — no markdown, no code fences. Each item must f
             createdBy: "ai-generator",
             createdAt: serverTimestamp(),
           });
-          producedCount++;
-        }
-      }
+        },
+      );
 
-      // ------------------------------------------------------------------
       // Multi-Select
-      // ------------------------------------------------------------------
-      if ((job.counts.multi || 0) > 0) {
-        const prompt = buildPrompt(
-          "multi-select",
-          job.counts.multi,
-          `Each item must be:
-{
-  "text": "Question with multiple correct answers?",
-  "options": [
-    {"id":"a","text":"...","correct":true},
-    {"id":"b","text":"...","correct":true},
-    {"id":"c","text":"...","correct":false},
-    {"id":"d","text":"...","correct":false}
-  ],
-  "answer": ["a","b"],
-  "explanation": "Why a and b are correct."
-}`,
-        );
-
-        const raw = await callNvidiaApi(prompt);
-        const items = JSON.parse(raw.replace(/```json|```/g, "").trim()) as {
-          text: string;
-          options: { id: string; text: string; correct: boolean }[];
-          answer: string[];
-          explanation: string;
-        }[];
-
-        for (const item of items.slice(0, job.counts.multi)) {
+      await generateAndSave<{
+        text: string;
+        options: { id: string; text: string; correct: boolean }[];
+        answer: string[];
+        explanation: string;
+      }>(
+        buildPrompt(
+          "multi-select (multiple correct answers)",
+          job.counts.multi || 0,
+          `[{"text":"?","options":[{"id":"a","text":"...","correct":true},{"id":"b","text":"...","correct":true},{"id":"c","text":"...","correct":false},{"id":"d","text":"...","correct":false}],"answer":["a","b"],"explanation":"..."}]`,
+        ),
+        job.counts.multi || 0,
+        async (item) => {
           const qRef = push(ref(db, "questionBank"));
           await set(qRef, {
             type: "multi",
@@ -348,33 +336,18 @@ Return ONLY a valid JSON array — no markdown, no code fences. Each item must f
             createdBy: "ai-generator",
             createdAt: serverTimestamp(),
           });
-          producedCount++;
-        }
-      }
+        },
+      );
 
-      // ------------------------------------------------------------------
       // Fill in the Blank
-      // ------------------------------------------------------------------
-      if ((job.counts.fill || 0) > 0) {
-        const prompt = buildPrompt(
+      await generateAndSave<{ text: string; answer: string; explanation: string }>(
+        buildPrompt(
           "fill-in-the-blank",
-          job.counts.fill,
-          `Each item must be:
-{
-  "text": "The ___ is responsible for ...",
-  "answer": "single word or phrase",
-  "explanation": "Why this answer."
-}`,
-        );
-
-        const raw = await callNvidiaApi(prompt);
-        const items = JSON.parse(raw.replace(/```json|```/g, "").trim()) as {
-          text: string;
-          answer: string;
-          explanation: string;
-        }[];
-
-        for (const item of items.slice(0, job.counts.fill)) {
+          job.counts.fill || 0,
+          `[{"text":"The ___ is ...","answer":"word","explanation":"..."}]`,
+        ),
+        job.counts.fill || 0,
+        async (item) => {
           const qRef = push(ref(db, "questionBank"));
           await set(qRef, {
             type: "fill",
@@ -391,33 +364,18 @@ Return ONLY a valid JSON array — no markdown, no code fences. Each item must f
             createdBy: "ai-generator",
             createdAt: serverTimestamp(),
           });
-          producedCount++;
-        }
-      }
+        },
+      );
 
-      // ------------------------------------------------------------------
       // True / False
-      // ------------------------------------------------------------------
-      if ((job.counts.tf || 0) > 0) {
-        const prompt = buildPrompt(
+      await generateAndSave<{ text: string; answer: "true" | "false"; explanation: string }>(
+        buildPrompt(
           "true/false",
-          job.counts.tf,
-          `Each item must be:
-{
-  "text": "Statement to evaluate.",
-  "answer": "true" or "false",
-  "explanation": "Why true or false."
-}`,
-        );
-
-        const raw = await callNvidiaApi(prompt);
-        const items = JSON.parse(raw.replace(/```json|```/g, "").trim()) as {
-          text: string;
-          answer: "true" | "false";
-          explanation: string;
-        }[];
-
-        for (const item of items.slice(0, job.counts.tf)) {
+          job.counts.tf || 0,
+          `[{"text":"Statement.","answer":"true","explanation":"..."}]`,
+        ),
+        job.counts.tf || 0,
+        async (item) => {
           const qRef = push(ref(db, "questionBank"));
           await set(qRef, {
             type: "tf",
@@ -434,37 +392,24 @@ Return ONLY a valid JSON array — no markdown, no code fences. Each item must f
             createdBy: "ai-generator",
             createdAt: serverTimestamp(),
           });
-          producedCount++;
-        }
-      }
+        },
+      );
 
-      // ------------------------------------------------------------------
       // Match the Following
-      // ------------------------------------------------------------------
-      if ((job.counts.match || 0) > 0) {
-        const prompt = buildPrompt(
+      await generateAndSave<{
+        text: string;
+        matchLeft: { id: string; text: string }[];
+        matchRight: { id: string; text: string }[];
+        answer: Record<string, string>;
+        explanation: string;
+      }>(
+        buildPrompt(
           "match-the-following",
-          job.counts.match,
-          `Each item must be:
-{
-  "text": "Match the following:",
-  "matchLeft": [{"id":"1","text":"Left A"},{"id":"2","text":"Left B"}],
-  "matchRight": [{"id":"a","text":"Right X"},{"id":"b","text":"Right Y"}],
-  "answer": {"1":"a","2":"b"},
-  "explanation": "1 matches a because..."
-}`,
-        );
-
-        const raw = await callNvidiaApi(prompt);
-        const items = JSON.parse(raw.replace(/```json|```/g, "").trim()) as {
-          text: string;
-          matchLeft: { id: string; text: string }[];
-          matchRight: { id: string; text: string }[];
-          answer: Record<string, string>;
-          explanation: string;
-        }[];
-
-        for (const item of items.slice(0, job.counts.match)) {
+          job.counts.match || 0,
+          `[{"text":"Match:","matchLeft":[{"id":"1","text":"A"}],"matchRight":[{"id":"a","text":"X"}],"answer":{"1":"a"},"explanation":"..."}]`,
+        ),
+        job.counts.match || 0,
+        async (item) => {
           const qRef = push(ref(db, "questionBank"));
           await set(qRef, {
             type: "match",
@@ -483,37 +428,24 @@ Return ONLY a valid JSON array — no markdown, no code fences. Each item must f
             createdBy: "ai-generator",
             createdAt: serverTimestamp(),
           });
-          producedCount++;
-        }
-      }
+        },
+      );
 
-      // ------------------------------------------------------------------
-      // Coding Stubs
-      // ------------------------------------------------------------------
-      if ((job.counts.coding || 0) > 0) {
-        const prompt = buildPrompt(
+      // Coding
+      await generateAndSave<{
+        text: string;
+        codingLanguage: string;
+        codingTemplate: string;
+        codingTests: string;
+        explanation: string;
+      }>(
+        buildPrompt(
           "coding",
-          job.counts.coding,
-          `Each item must be:
-{
-  "text": "Write a function that ...",
-  "codingLanguage": "javascript",
-  "codingTemplate": "function solve(input) {\\n  // your code here\\n}",
-  "codingTests": "assert(solve(...) === ...);",
-  "explanation": "Explain the approach."
-}`,
-        );
-
-        const raw = await callNvidiaApi(prompt);
-        const items = JSON.parse(raw.replace(/```json|```/g, "").trim()) as {
-          text: string;
-          codingLanguage: string;
-          codingTemplate: string;
-          codingTests: string;
-          explanation: string;
-        }[];
-
-        for (const item of items.slice(0, job.counts.coding)) {
+          job.counts.coding || 0,
+          `[{"text":"Write a function...","codingLanguage":"javascript","codingTemplate":"function solve(n) {\\n  // code here\\n}","codingTests":"assert(solve(1)===1);","explanation":"..."}]`,
+        ),
+        job.counts.coding || 0,
+        async (item) => {
           const qRef = push(ref(db, "questionBank"));
           await set(qRef, {
             type: "coding",
@@ -533,11 +465,9 @@ Return ONLY a valid JSON array — no markdown, no code fences. Each item must f
             createdBy: "ai-generator",
             createdAt: serverTimestamp(),
           });
-          producedCount++;
-        }
-      }
+        },
+      );
 
-      // Mark job complete
       await update(ref(db, `generationJobs/${jobId}`), {
         status: "done",
         producedCount,
@@ -545,14 +475,12 @@ Return ONLY a valid JSON array — no markdown, no code fences. Each item must f
 
       return { success: true, count: producedCount };
     } catch (err: unknown) {
-      console.error("generateAiQuestions error:", err);
+      const message = err instanceof Error ? err.message : "AI Generation failed";
+      console.error("[generateAiQuestions] error:", message);
       await update(ref(db, `generationJobs/${jobId}`), {
         status: "failed",
-        error: err instanceof Error ? err.message : "AI Generation failed",
+        error: message,
       });
-      return {
-        success: false,
-        error: err instanceof Error ? err.message : "AI Generation failed",
-      };
+      return { success: false, error: message };
     }
   });

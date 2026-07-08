@@ -23,10 +23,13 @@ type DocumentItem = {
   cloudinaryUrl?: string;
   supabaseStoragePath?: string;
   pages: number;
-  status: "uploaded" | "parsing" | "parsed" | "failed";
+  status: "uploaded" | "parsing" | "parsed" | "failed" | "running";
   uploadedBy: string;
   createdAt: number;
+  extractedText?: string; // temp field stored before server fn processes it
+  lastError?: string;     // set by server fn on failure for debugging
 };
+
 
 function DocumentsAdmin() {
   const { user } = useAuth();
@@ -79,34 +82,32 @@ function DocumentsAdmin() {
         cloudinaryUrl = supabaseUrl;
       }
 
-      // 4. Save Document metadata in Firebase RTDB
+      // 4. Save Document metadata + extracted text in Firebase.
+      //    We store extractedText in Firebase so the server function
+      //    can read it without a huge RPC payload crossing the boundary.
       const db = getFirebaseDb();
       const newDocRef = push(ref(db, "documents"));
       const docId = newDocRef.key;
 
       if (!docId) throw new Error("Failed to create document record key.");
 
-      const docData: DocumentItem = {
+      await set(newDocRef, {
         title: file.name,
         cloudinaryUrl,
         supabaseStoragePath: supabaseUrl,
-        pages: 0,
+        pages: extracted.totalPages,
         status: "uploaded",
         uploadedBy: user?.uid ?? "unknown",
         createdAt: Date.now(),
-      };
+        extractedText: extracted.fullText, // temp field — removed by server after parsing
+      });
 
-      await set(newDocRef, docData);
-      toast.success("Document saved! Starting AI organisation...");
+      toast.success("Document saved! Sending to NVIDIA AI for organisation...");
 
-      // 5. Send extracted text to the server function for NVIDIA AI organisation
-      parsePdfAndChunk({
-        docId,
-        extractedText: extracted.fullText,
-        totalPages: extracted.totalPages,
-      }).catch((err) => {
+      // 5. Call server function with just the docId — it reads the text from Firebase
+      parsePdfAndChunk({ docId }).catch((err) => {
         console.error("PDF Parsing failed", err);
-        toast.error("AI organisation failed. You can retry from the document list.");
+        toast.error("AI organisation failed. Check the document list for details.");
       });
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed to upload document.");
@@ -265,12 +266,12 @@ function DocumentsAdmin() {
                             Uploaded
                           </Badge>
                         )}
-                        {doc.status === "parsing" && (
+                        {(doc.status === "parsing" || doc.status === "running") && (
                           <Badge
                             variant="outline"
                             className="bg-sky-50 text-sky-600 border-sky-200 text-[10px] uppercase font-bold flex items-center gap-1"
                           >
-                            <RefreshCw className="h-2.5 w-2.5 animate-spin" /> Parsing
+                            <RefreshCw className="h-2.5 w-2.5 animate-spin" /> AI Processing
                           </Badge>
                         )}
                         {doc.status === "parsed" && (
@@ -285,6 +286,7 @@ function DocumentsAdmin() {
                           <Badge
                             variant="outline"
                             className="bg-red-50 text-red-500 border-red-200 text-[10px] uppercase font-bold"
+                            title={doc.lastError ?? "Unknown error"}
                           >
                             Failed
                           </Badge>
