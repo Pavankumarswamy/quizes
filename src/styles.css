@@ -133,6 +133,10 @@
 }
 
 @layer base {
+  html, body {
+    height: 100%;
+  }
+
   html {
     zoom: 1.25;
   }
@@ -145,4 +149,13 @@
     background-color: var(--color-background);
     color: var(--color-foreground);
   }
+}
+
+/* Hide scrollbars but keep scroll functionality */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
 }

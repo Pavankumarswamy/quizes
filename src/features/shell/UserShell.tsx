@@ -18,13 +18,13 @@ export function UserShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
 
   return (
-    <div className="flex h-screen w-full overflow-hidden">
+    <div className="flex h-full w-full overflow-hidden">
       <aside className="hidden w-60 flex-col border-r bg-card md:flex h-full shrink-0">
-        <div className="flex h-14 items-center gap-2 border-b px-4 font-semibold shrink-0">
-          <div className="h-6 w-6 rounded-md bg-primary" />
+        <div className="flex h-11 items-center gap-2 border-b px-3 font-semibold shrink-0 text-sm">
+          <div className="h-5 w-5 rounded bg-primary" />
           QuizForge
         </div>
-        <nav className="flex-1 space-y-1 p-3 overflow-y-auto no-scrollbar">
+        <nav className="flex-1 space-y-0.5 p-2 overflow-y-auto no-scrollbar">
           {nav.map((n) => {
             const active = pathname === n.to;
             const Icon = n.icon;
@@ -32,13 +32,13 @@ export function UserShell({ children }: { children: ReactNode }) {
               <Link
                 key={n.to}
                 to={n.to}
-                className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm transition ${
+                className={`flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] transition ${
                   active
                     ? "bg-accent text-accent-foreground"
                     : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
                 }`}
               >
-                <Icon className="h-4 w-4" />
+                <Icon className="h-3.5 w-3.5 shrink-0" />
                 {n.label}
               </Link>
             );
@@ -46,25 +46,25 @@ export function UserShell({ children }: { children: ReactNode }) {
           {role === "admin" && (
             <Link
               to="/admin"
-              className="mt-4 flex items-center gap-2 rounded-md border border-dashed px-3 py-2 text-sm text-foreground hover:bg-accent/60"
+              className="mt-2 flex items-center gap-2 rounded-md border border-dashed px-2.5 py-1.5 text-[13px] text-foreground hover:bg-accent/60"
             >
-              <Shield className="h-4 w-4" />
+              <Shield className="h-3.5 w-3.5 shrink-0" />
               Admin console
             </Link>
           )}
         </nav>
-        <div className="border-t p-3 shrink-0">
-          <div className="mb-2 truncate text-xs text-muted-foreground">{user?.email}</div>
+        <div className="border-t p-2 shrink-0 space-y-1.5">
+          <div className="truncate text-[10px] px-1 text-muted-foreground">{user?.email}</div>
           <Button
             variant="outline"
             size="sm"
-            className="w-full"
+            className="w-full h-8 text-[11px]"
             onClick={async () => {
               await signOutUser();
               navigate({ to: "/" });
             }}
           >
-            <LogOut className="mr-2 h-4 w-4" /> Sign out
+            <LogOut className="mr-1.5 h-3.5 w-3.5" /> Sign out
           </Button>
         </div>
       </aside>
