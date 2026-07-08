@@ -1,6 +1,39 @@
 import { createServerFn } from "@tanstack/react-start";
-import { getFirebaseDb } from "@/lib/firebase";
-import { ref, update, set, get, push, serverTimestamp } from "firebase/database";
+import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
+import { getDatabase, type Database, ref, update, set, get, push, serverTimestamp } from "firebase/database";
+
+// ---------------------------------------------------------------------------
+// Server-side Firebase init — uses process.env (Node.js), NOT import.meta.env
+// import.meta.env is Vite client-only and is undefined in server functions.
+// ---------------------------------------------------------------------------
+let _serverApp: FirebaseApp | null = null;
+let _serverDb: Database | null = null;
+
+function getServerDb(): Database {
+  if (_serverDb) return _serverDb;
+  if (!_serverApp) {
+    const config = {
+      apiKey: process.env["VITE_FIREBASE_API_KEY"],
+      authDomain: process.env["VITE_FIREBASE_AUTH_DOMAIN"],
+      databaseURL: process.env["VITE_FIREBASE_DATABASE_URL"],
+      projectId: process.env["VITE_FIREBASE_PROJECT_ID"],
+      storageBucket: process.env["VITE_FIREBASE_STORAGE_BUCKET"],
+      messagingSenderId: process.env["VITE_FIREBASE_MESSAGING_SENDER_ID"],
+      appId: process.env["VITE_FIREBASE_APP_ID"],
+    };
+    if (!config.apiKey || !config.databaseURL) {
+      throw new Error(
+        `[rag.functions] Firebase env vars missing on server. ` +
+        `VITE_FIREBASE_API_KEY=${config.apiKey ?? "undefined"} ` +
+        `VITE_FIREBASE_DATABASE_URL=${config.databaseURL ?? "undefined"}`,
+      );
+    }
+    // Reuse existing app if already initialised (hot-reload safety)
+    _serverApp = getApps().find((a) => a.name === "rag-server") ?? initializeApp(config, "rag-server");
+  }
+  _serverDb = getDatabase(_serverApp);
+  return _serverDb;
+}
 
 // ---------------------------------------------------------------------------
 // NVIDIA API helper (OpenAI-compatible endpoint)
@@ -69,7 +102,7 @@ export const parsePdfAndChunk = createServerFn({ method: "POST" })
   .validator((d: ParseParams) => d)
   .handler(async ({ data }) => {
     const { docId } = data;
-    const db = getFirebaseDb();
+    const db = getServerDb();
 
     try {
       await update(ref(db, `documents/${docId}`), { status: "running" });
@@ -193,7 +226,7 @@ export const generateAiQuestions = createServerFn({ method: "POST" })
   .validator((d: GenerateParams) => d)
   .handler(async ({ data }) => {
     const { jobId } = data;
-    const db = getFirebaseDb();
+    const db = getServerDb();
 
     try {
       await update(ref(db, `generationJobs/${jobId}`), { status: "running" });
