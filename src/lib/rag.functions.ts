@@ -1,10 +1,42 @@
 import { createServerFn } from "@tanstack/react-start";
 import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
 import { getDatabase, type Database, ref, update, set, get, push, serverTimestamp } from "firebase/database";
+import fs from "fs";
+import path from "path";
 
 // ---------------------------------------------------------------------------
-// Server-side Firebase init — uses process.env (Node.js), NOT import.meta.env
-// import.meta.env is Vite client-only and is undefined in server functions.
+// Robust server-side env variable reader (reads process.env or .env file directly)
+// ---------------------------------------------------------------------------
+function getEnvVar(key: string): string {
+  if (typeof process !== "undefined" && process.env && process.env[key]) {
+    return process.env[key]!;
+  }
+  try {
+    const envPath = path.resolve(process.cwd(), ".env");
+    if (fs.existsSync(envPath)) {
+      const content = fs.readFileSync(envPath, "utf-8");
+      const lines = content.split("\n");
+      for (const line of lines) {
+        const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/);
+        if (match && match[1] === key) {
+          let value = match[2] || "";
+          if (value.startsWith('"') && value.endsWith('"')) {
+            value = value.slice(1, -1);
+          } else if (value.startsWith("'") && value.endsWith("'")) {
+            value = value.slice(1, -1);
+          }
+          return value.trim();
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Failed to read env var from .env file:", e);
+  }
+  return "";
+}
+
+// ---------------------------------------------------------------------------
+// Server-side Firebase init — uses getEnvVar to support all server runtimes
 // ---------------------------------------------------------------------------
 let _serverApp: FirebaseApp | null = null;
 let _serverDb: Database | null = null;
@@ -13,19 +45,19 @@ function getServerDb(): Database {
   if (_serverDb) return _serverDb;
   if (!_serverApp) {
     const config = {
-      apiKey: process.env["VITE_FIREBASE_API_KEY"],
-      authDomain: process.env["VITE_FIREBASE_AUTH_DOMAIN"],
-      databaseURL: process.env["VITE_FIREBASE_DATABASE_URL"],
-      projectId: process.env["VITE_FIREBASE_PROJECT_ID"],
-      storageBucket: process.env["VITE_FIREBASE_STORAGE_BUCKET"],
-      messagingSenderId: process.env["VITE_FIREBASE_MESSAGING_SENDER_ID"],
-      appId: process.env["VITE_FIREBASE_APP_ID"],
+      apiKey: getEnvVar("VITE_FIREBASE_API_KEY"),
+      authDomain: getEnvVar("VITE_FIREBASE_AUTH_DOMAIN"),
+      databaseURL: getEnvVar("VITE_FIREBASE_DATABASE_URL"),
+      projectId: getEnvVar("VITE_FIREBASE_PROJECT_ID"),
+      storageBucket: getEnvVar("VITE_FIREBASE_STORAGE_BUCKET"),
+      messagingSenderId: getEnvVar("VITE_FIREBASE_MESSAGING_SENDER_ID"),
+      appId: getEnvVar("VITE_FIREBASE_APP_ID"),
     };
     if (!config.apiKey || !config.databaseURL) {
       throw new Error(
         `[rag.functions] Firebase env vars missing on server. ` +
-        `VITE_FIREBASE_API_KEY=${config.apiKey ?? "undefined"} ` +
-        `VITE_FIREBASE_DATABASE_URL=${config.databaseURL ?? "undefined"}`,
+        `VITE_FIREBASE_API_KEY=${config.apiKey ? "PRESENT" : "MISSING"} ` +
+        `VITE_FIREBASE_DATABASE_URL=${config.databaseURL ? "PRESENT" : "MISSING"}`,
       );
     }
     // Reuse existing app if already initialised (hot-reload safety)
@@ -38,12 +70,11 @@ function getServerDb(): Database {
 // ---------------------------------------------------------------------------
 // NVIDIA API helper (OpenAI-compatible endpoint)
 // ---------------------------------------------------------------------------
-const NVIDIA_API_KEY =
-  "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";
 const NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1";
 const NVIDIA_MODEL = "openai/gpt-oss-120b";
 
 async function callNvidiaApi(prompt: string, systemPrompt?: string): Promise<string> {
+  const apiKey = getEnvVar("NVIDIA_API_KEY") || "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";
   const messages: { role: string; content: string }[] = [];
 
   if (systemPrompt) {
@@ -55,7 +86,7 @@ async function callNvidiaApi(prompt: string, systemPrompt?: string): Promise<str
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${NVIDIA_API_KEY}`,
+      Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
       model: NVIDIA_MODEL,
@@ -80,6 +111,12 @@ async function callNvidiaApi(prompt: string, systemPrompt?: string): Promise<str
   if (!content) throw new Error("NVIDIA API returned empty content");
   return content;
 }
+
+export const callNvidiaProxy = createServerFn({ method: "POST" })
+  .validator((d: { prompt: string; systemPrompt?: string }) => d)
+  .handler(async ({ data }) => {
+    return callNvidiaApi(data.prompt, data.systemPrompt);
+  });
 
 /** Strip markdown code fences the model sometimes wraps JSON in */
 function stripFences(raw: string): string {

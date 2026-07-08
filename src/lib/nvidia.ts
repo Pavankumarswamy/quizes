@@ -1,46 +1,8 @@
-/**
- * Client-side NVIDIA API helper.
- * Calls /api/nvidia (our server-side proxy) instead of NVIDIA directly,
- * because NVIDIA blocks direct browser fetches (CORS).
- * The proxy injects the API key server-side and forwards the response.
- */
-
-const NVIDIA_MODEL = "openai/gpt-oss-120b";
+import { callNvidiaProxy } from "./rag.functions";
 
 export async function callNvidiaApi(prompt: string, systemPrompt?: string): Promise<string> {
-  const messages: { role: string; content: string }[] = [];
-  if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
-  messages.push({ role: "user", content: prompt });
-
-  // Call our server-side proxy — avoids CORS and keeps the API key server-only
-  const response = await fetch("/api/nvidia", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: NVIDIA_MODEL,
-      messages,
-      temperature: 0.7,
-      top_p: 1,
-      max_tokens: 4096,
-      stream: false,
-    }),
-  });
-
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`NVIDIA proxy error ${response.status}: ${errText.slice(0, 400)}`);
-  }
-
-  const data = (await response.json()) as {
-    choices?: { message: { content: string } }[];
-    error?: string;
-  };
-
-  if (data.error) throw new Error(`NVIDIA error: ${data.error}`);
-
-  const content = data.choices?.[0]?.message?.content ?? "";
-  if (!content) throw new Error("NVIDIA returned empty content");
-  return content;
+  // Call the server function directly. TanStack Start compiles this into a secure same-origin RPC call.
+  return callNvidiaProxy({ prompt, systemPrompt });
 }
 
 /** Strip markdown code fences the model sometimes adds around JSON */
