@@ -423,29 +423,52 @@ function AIQuizGenerator() {
                   <p className="text-xs">Choose a source document to select topics.</p>
                 </div>
               ) : (
-                <div className="space-y-2.5">
-                  {Object.entries(nodes).map(([id, node]) => {
-                    const checked = selectedNodeIds.includes(id);
-                    return (
-                      <div key={id} className="flex items-start gap-2.5 text-xs text-foreground">
-                        <Checkbox
-                          checked={checked}
-                          onCheckedChange={(val: boolean | "indeterminate") => handleSelectNode(id, !!val)}
-                          id={`node-chk-${id}`}
-                          className="mt-0.5"
-                        />
-                        <Label
-                          htmlFor={`node-chk-${id}`}
-                          className="leading-tight cursor-pointer font-medium"
-                        >
-                          {node.title}
-                        </Label>
-                      </div>
-                    );
-                  })}
-                  {Object.keys(nodes).length === 0 && (
+                <div className="space-y-4">
+                  {Object.entries(nodes)
+                    .filter(([_, n]) => !n.parentId)
+                    .sort((a, b) => (a[1].order ?? 0) - (b[1].order ?? 0))
+                    .map(([unitId, unitNode]) => {
+                      const childTopics = Object.entries(nodes)
+                        .filter(([_, n]) => n.parentId === unitId)
+                        .sort((a, b) => (a[1].order ?? 0) - (b[1].order ?? 0));
+
+                      return (
+                        <div key={unitId} className="space-y-2">
+                          <div className="font-semibold text-xs text-muted-foreground border-b pb-1 uppercase tracking-wider">
+                            {unitNode.title}
+                          </div>
+                          <div className="space-y-2 pl-2">
+                            {childTopics.map(([topicId, topicNode]) => {
+                              const checked = selectedNodeIds.includes(topicId);
+                              return (
+                                <div key={topicId} className="flex items-start gap-2.5 text-xs text-foreground hover:bg-muted/30 p-1 rounded transition-colors">
+                                  <Checkbox
+                                    checked={checked}
+                                    onCheckedChange={(val: boolean | "indeterminate") => handleSelectNode(topicId, !!val)}
+                                    id={`node-chk-${topicId}`}
+                                    className="mt-0.5"
+                                  />
+                                  <Label
+                                    htmlFor={`node-chk-${topicId}`}
+                                    className="leading-tight cursor-pointer font-medium"
+                                  >
+                                    {topicNode.title}
+                                  </Label>
+                                </div>
+                              );
+                            })}
+                            {childTopics.length === 0 && (
+                              <div className="text-[10px] text-muted-foreground italic pl-2">
+                                No topics in this unit
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  {Object.values(nodes).filter((n) => !n.parentId).length === 0 && (
                     <div className="text-center py-8 text-xs text-muted-foreground">
-                      No nodes found. Go back to Syllabus Tree Editor.
+                      No units or topics found. Go back to Syllabus Tree Editor.
                     </div>
                   )}
                 </div>
