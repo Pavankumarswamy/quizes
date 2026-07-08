@@ -1,12 +1,10 @@
 /**
  * Client-side NVIDIA API helper.
- * Calls the OpenAI-compatible NVIDIA NIM endpoint directly from the browser.
- * NVIDIA's API is CORS-enabled for direct browser usage.
+ * Calls /api/nvidia (our server-side proxy) instead of NVIDIA directly,
+ * because NVIDIA blocks direct browser fetches (CORS).
+ * The proxy injects the API key server-side and forwards the response.
  */
 
-const NVIDIA_API_KEY =
-  "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";
-const NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1";
 const NVIDIA_MODEL = "openai/gpt-oss-120b";
 
 export async function callNvidiaApi(prompt: string, systemPrompt?: string): Promise<string> {
@@ -14,12 +12,10 @@ export async function callNvidiaApi(prompt: string, systemPrompt?: string): Prom
   if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
   messages.push({ role: "user", content: prompt });
 
-  const response = await fetch(`${NVIDIA_BASE_URL}/chat/completions`, {
+  // Call our server-side proxy — avoids CORS and keeps the API key server-only
+  const response = await fetch("/api/nvidia", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${NVIDIA_API_KEY}`,
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model: NVIDIA_MODEL,
       messages,
@@ -32,15 +28,18 @@ export async function callNvidiaApi(prompt: string, systemPrompt?: string): Prom
 
   if (!response.ok) {
     const errText = await response.text();
-    throw new Error(`NVIDIA API error ${response.status}: ${errText.slice(0, 400)}`);
+    throw new Error(`NVIDIA proxy error ${response.status}: ${errText.slice(0, 400)}`);
   }
 
   const data = (await response.json()) as {
-    choices: { message: { content: string } }[];
+    choices?: { message: { content: string } }[];
+    error?: string;
   };
 
-  const content = data.choices[0]?.message?.content ?? "";
-  if (!content) throw new Error("NVIDIA API returned empty content");
+  if (data.error) throw new Error(`NVIDIA error: ${data.error}`);
+
+  const content = data.choices?.[0]?.message?.content ?? "";
+  if (!content) throw new Error("NVIDIA returned empty content");
   return content;
 }
 
@@ -72,7 +71,8 @@ export interface ParsedSyllabus {
 }
 
 /**
- * Sends extracted PDF text to NVIDIA and gets back a structured syllabus tree + chunks.
+ * Sends extracted PDF text to NVIDIA (via our proxy) and returns
+ * a structured syllabus tree + text chunks.
  */
 export async function organisePdfWithNvidia(extractedText: string): Promise<ParsedSyllabus> {
   const prompt = `You are an expert curriculum designer. Given the following raw PDF text, extract a structured syllabus with Units and Topics.
