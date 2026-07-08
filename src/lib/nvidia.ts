@@ -39,7 +39,7 @@ export interface ParsedSyllabus {
  * This is extremely fast (under 2 seconds) and avoids large text copy latency.
  */
 export async function organisePdfWithNvidia(extracted: ExtractedPdf): Promise<ParsedSyllabus> {
-  const prompt = `You are an expert curriculum designer. Given the following raw PDF text, extract a structured syllabus with Units and Topics.
+  const prompt = `You are an expert curriculum designer. Given the following raw PDF text, extract a highly detailed and complete structured syllabus with all Units, Modules, and Topics.
 
 Return ONLY valid JSON — no markdown, no code fences, no explanation.
 
@@ -52,13 +52,13 @@ The JSON must match this exact shape:
 }
 
 Rules:
-- Create 2-6 units and 3-15 topics depending on content richness.
-- For each topic node, specify the 1-indexed page numbers in the "pages" array (e.g. [1] or [1, 2]) where the topic text is discussed.
-- Do NOT output any chunk text. Keep the output structure minimal for speed.
+- Exhaustively extract ALL units, chapters, modules, and topics mentioned in the text. Do NOT summarize or omit anything.
+- For each topic node, specify the 1-indexed page numbers in the "pages" array (e.g. [1] or [1, 2]) where the topic is detailed in the PDF.
+- Do NOT generate any chunk text. Keep the output structure minimal for speed.
 - Keep node IDs sequential: node_1, node_2...
 
-PDF TEXT:
-${extracted.fullText.slice(0, 6000)}`;
+PDF TEXT (FULL):
+${extracted.fullText.slice(0, 40000)}`;
 
   const raw = await callNvidiaApi(
     prompt,
