@@ -276,9 +276,21 @@ type JobData = {
 };
 
 export const generateAiQuestions = createServerFn({ method: "POST" })
-  .validator((d: GenerateParams) => d)
+  .validator(
+    z.union([
+      z.object({
+        jobId: z.string(),
+      }),
+      z.object({
+        data: z.object({
+          jobId: z.string(),
+        })
+      })
+    ])
+  )
   .handler(async ({ data }) => {
-    const { jobId } = data;
+    const payload = "data" in data ? (data.data as any) : data;
+    const jobId = payload.jobId;
     const db = getServerDb();
 
     try {

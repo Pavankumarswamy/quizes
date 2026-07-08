@@ -153,7 +153,7 @@ function AIQuizGenerator() {
       toast.success("AI Generation job queued successfully");
 
       // Trigger the server function in the background
-      generateAiQuestions({ jobId }).catch((err) => {
+      generateAiQuestions({ data: { jobId } }).catch((err) => {
         console.error("AI Generation failed", err);
       });
     } catch (err: unknown) {
