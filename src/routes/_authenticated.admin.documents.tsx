@@ -13,6 +13,13 @@ import { Label } from "@/components/ui/label";
 import { FileText, Trash2, BookOpen, Clock, FileUp, RefreshCw } from "lucide-react";
 import { extractTextFromPdf } from "@/lib/pdf-extractor";
 import { organisePdfWithNvidia } from "@/lib/nvidia";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export const Route = createFileRoute("/_authenticated/admin/documents")({
   component: DocumentsAdmin,
@@ -26,6 +33,8 @@ type DocumentItem = {
   status: "uploaded" | "parsing" | "parsed" | "failed" | "running";
   uploadedBy: string;
   createdAt: number;
+  categoryId?: string;
+  subcategoryId?: string;
   extractedText?: string; // temp field stored before server fn processes it
   lastError?: string;     // set by server fn on failure for debugging
 };
@@ -37,17 +46,39 @@ function DocumentsAdmin() {
   const [isUploading, setIsUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
 
+  // Categories & Subcategories state
+  const [categories, setCategories] = useState<Record<string, { name: string }>>({});
+  const [subcategories, setSubcategories] = useState<Record<string, { categoryId: string; name: string }>>({});
+  const [selectedCategoryId, setSelectedCategoryId] = useState("");
+  const [selectedSubcategoryId, setSelectedSubcategoryId] = useState("");
+
   useEffect(() => {
     const db = getFirebaseDb();
-    const unsub = onValue(ref(db, "documents"), (snap) => {
+    const unsubDocs = onValue(ref(db, "documents"), (snap) => {
       setDocuments((snap.val() as Record<string, DocumentItem>) ?? {});
     });
-    return () => unsub();
+    const unsubCats = onValue(ref(db, "categories"), (snap) => {
+      setCategories((snap.val() as any) ?? {});
+    });
+    const unsubSubs = onValue(ref(db, "subcategories"), (snap) => {
+      setSubcategories((snap.val() as any) ?? {});
+    });
+
+    return () => {
+      unsubDocs();
+      unsubCats();
+      unsubSubs();
+    };
   }, []);
+
 
   const handleUpload = async (file: File) => {
     if (file.type !== "application/pdf") {
       toast.error("Please upload a PDF document.");
+      return;
+    }
+    if (!selectedCategoryId || !selectedSubcategoryId) {
+      toast.error("Please select a Category and Subcategory before uploading!");
       return;
     }
     setIsUploading(true);
@@ -94,6 +125,8 @@ function DocumentsAdmin() {
         status: "running",
         uploadedBy: user?.uid ?? "unknown",
         createdAt: Date.now(),
+        categoryId: selectedCategoryId,
+        subcategoryId: selectedSubcategoryId,
       });
 
       // 5. Call NVIDIA API directly from the browser
@@ -196,31 +229,83 @@ function DocumentsAdmin() {
         <Card className="md:col-span-1 border-primary/20 shadow-sm self-start">
           <CardHeader>
             <CardTitle className="text-base font-semibold">Upload Document</CardTitle>
-            <CardDescription>Drag and drop a PDF file to begin ingestion.</CardDescription>
+            <CardDescription>Select category, then upload a PDF file to begin ingestion.</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            {/* Category Selector */}
+            <div className="space-y-1.5">
+              <Label htmlFor="cat-selector">Syllabus Category</Label>
+              <Select
+                value={selectedCategoryId}
+                onValueChange={(val) => {
+                  setSelectedCategoryId(val);
+                  setSelectedSubcategoryId("");
+                }}
+              >
+                <SelectTrigger id="cat-selector">
+                  <SelectValue placeholder="Choose Category..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(categories).map(([id, cat]) => (
+                    <SelectItem key={id} value={id}>
+                      {cat.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Subcategory Selector */}
+            <div className="space-y-1.5 pb-2">
+              <Label htmlFor="subcat-selector">Syllabus Subcategory</Label>
+              <Select
+                value={selectedSubcategoryId}
+                onValueChange={setSelectedSubcategoryId}
+                disabled={!selectedCategoryId}
+              >
+                <SelectTrigger id="subcat-selector">
+                  <SelectValue placeholder="Choose Subcategory..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(subcategories)
+                    .filter(([_, sub]) => sub.categoryId === selectedCategoryId)
+                    .map(([id, sub]) => (
+                      <SelectItem key={id} value={id}>
+                        {sub.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             <div
               onDragEnter={handleDrag}
               onDragOver={handleDrag}
               onDragLeave={handleDrag}
               onDrop={handleDrop}
-              className={`relative border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center text-center transition cursor-pointer ${
+              className={`relative border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center text-center transition cursor-pointer ${
                 dragActive
                   ? "border-primary bg-primary/5"
                   : "border-muted-foreground/20 hover:bg-muted/30"
-              } ${isUploading ? "pointer-events-none opacity-50" : ""}`}
+              } ${isUploading || !selectedSubcategoryId ? "pointer-events-none opacity-50 bg-muted/10" : ""}`}
             >
-              <FileUp className="h-10 w-10 text-muted-foreground mb-3 stroke-1.5" />
+              <FileUp className="h-9 w-9 text-muted-foreground mb-2 stroke-1.5" />
               <p className="text-xs font-semibold text-foreground mb-1">
-                {isUploading ? "Uploading file..." : "Drag & Drop PDF Here"}
+                {!selectedSubcategoryId
+                  ? "Select Subcategory to Unlock"
+                  : isUploading
+                  ? "Uploading file..."
+                  : "Drag & Drop PDF Here"}
               </p>
-              <p className="text-[10px] text-muted-foreground mb-4">
+              <p className="text-[9px] text-muted-foreground mb-3">
                 Supported format: PDF up to 50 pages
               </p>
 
               <Label
                 htmlFor="pdf-file-uploader"
-                className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 py-2 text-xs font-medium text-primary-foreground shadow-sm hover:bg-primary/90 transition cursor-pointer"
+                className={`inline-flex h-8 items-center justify-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm hover:bg-primary/90 transition cursor-pointer ${
+                  !selectedSubcategoryId ? "pointer-events-none opacity-40" : ""
+                }`}
               >
                 Choose File
               </Label>
@@ -230,7 +315,7 @@ function DocumentsAdmin() {
                 accept="application/pdf"
                 className="hidden"
                 onChange={handleFileSelect}
-                disabled={isUploading}
+                disabled={isUploading || !selectedSubcategoryId}
               />
             </div>
           </CardContent>
@@ -253,17 +338,35 @@ function DocumentsAdmin() {
                     <div className="h-10 w-10 rounded-lg bg-muted/60 border flex items-center justify-center shrink-0">
                       <FileText className="h-5 w-5 text-muted-foreground" />
                     </div>
-                    <div className="space-y-1">
+                    <div className="space-y-1.5">
                       <h4 className="font-semibold text-sm text-foreground line-clamp-1">
                         {doc.title}
                       </h4>
-                      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                      <div className="flex flex-wrap items-center gap-2.5 text-xs text-muted-foreground">
                         <span className="flex items-center gap-1">
                           <Clock className="h-3.5 w-3.5" />
                           {new Date(doc.createdAt).toLocaleDateString()}
                         </span>
                         <span>·</span>
                         <span>{doc.pages ? `${doc.pages} Pages` : "Parsing pages..."}</span>
+
+                        {doc.categoryId && categories[doc.categoryId] && (
+                          <>
+                            <span>·</span>
+                            <Badge variant="outline" className="bg-accent/40 text-accent-foreground border-accent/25 text-[10px] py-0 px-1.5 font-normal">
+                              {categories[doc.categoryId].name}
+                            </Badge>
+                          </>
+                        )}
+                        {doc.subcategoryId && subcategories[doc.subcategoryId] && (
+                          <>
+                            <span>·</span>
+                            <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 text-[10px] py-0 px-1.5 font-normal">
+                              {subcategories[doc.subcategoryId].name}
+                            </Badge>
+                          </>
+                        )}
+
                         <span>·</span>
                         {doc.status === "uploaded" && (
                           <Badge
