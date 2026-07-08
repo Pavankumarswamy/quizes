@@ -31,13 +31,13 @@ export function AdminShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
 
   return (
-    <div className="flex min-h-screen w-full">
-      <aside className="hidden w-64 flex-col border-r bg-card md:flex h-screen sticky top-0 overflow-y-auto shrink-0">
-        <div className="flex h-14 items-center gap-2 border-b px-4 font-semibold">
+    <div className="flex h-screen w-full overflow-hidden">
+      <aside className="hidden w-64 flex-col border-r bg-card md:flex h-screen sticky top-0 overflow-y-auto shrink-0 no-scrollbar">
+        <div className="flex h-14 items-center gap-2 border-b px-4 font-semibold shrink-0">
           <div className="h-6 w-6 rounded-md bg-primary" />
           Admin console
         </div>
-        <nav className="space-y-1 p-3">
+        <nav className="space-y-1 p-3 shrink-0">
           {nav.map((n) => {
             const active = n.exact ? pathname === n.to : pathname.startsWith(n.to);
             const Icon = n.icon;
@@ -57,7 +57,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
             );
           })}
         </nav>
-        <div className="space-y-2 border-t p-3">
+        <div className="mt-auto space-y-2 border-t p-3 shrink-0">
           <Button asChild variant="ghost" size="sm" className="w-full justify-start">
             <Link to="/dashboard">
               <ArrowLeft className="mr-2 h-4 w-4" /> Back to app
@@ -77,7 +77,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
           </Button>
         </div>
       </aside>
-      <main className="flex-1 bg-muted/20">{children}</main>
+      <main className="flex-1 bg-muted/20 h-screen overflow-y-auto">{children}</main>
     </div>
   );
 }
