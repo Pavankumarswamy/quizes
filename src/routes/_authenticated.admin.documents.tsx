@@ -179,8 +179,10 @@ function DocumentsAdmin() {
     }
   };
 
-  const manualPromptString = extractedData
-    ? `You are an expert curriculum designer. Given the following raw PDF text, extract a structured syllabus with Units and Topics.
+  const manualPromptString = `You are an expert curriculum designer. Given the following subject details, extract a structured syllabus with Units and Topics.
+
+Subject Category: ${categories[selectedCategoryId]?.name ?? "General"}
+Subject Subcategory: ${subcategories[selectedSubcategoryId]?.name ?? "General"}
 
 Return ONLY valid JSON — no markdown, no code fences, no explanation.
 
@@ -193,19 +195,22 @@ The JSON must match this exact shape:
 }
 
 Rules:
-- Extract all key units and topics mentioned in the text.
+- Extract all key units and topics mentioned.
 - Group closely related subtopics together into broader topic nodes so that the total number of nodes does not exceed 30.
-- For each topic node, specify the 1-indexed page numbers in the "pages" array (e.g. [1] or [1, 2]) where the topic is detailed in the PDF.
+- For each topic node, specify the 1-indexed page numbers in the "pages" array (e.g. [1] or [1, 2]) where the topic is detailed.
 - Do NOT generate any chunk text. Keep the output structure minimal for speed.
 - Keep node IDs sequential: node_1, node_2...
 
-PDF TEXT:
+${
+  extractedData
+    ? `PDF TEXT TO GROUND TOPICS IN (Exhaustively extract topics from this text, specifying 1-indexed page numbers in the "pages" array):
 ${extractedData.fullText.slice(0, 30000)}`
-    : "";
+    : "Design a comprehensive syllabus outline based on general knowledge for this subject."
+}`;
 
   const handleManualImport = async () => {
-    if (!extractedData) {
-      toast.error("Please choose a PDF file first!");
+    if (!selectedCategoryId || !selectedSubcategoryId) {
+      toast.error("Please select a Category and Subcategory first!");
       return;
     }
     if (!pastedJson.trim()) {
@@ -233,8 +238,9 @@ ${extractedData.fullText.slice(0, 30000)}`
         throw new Error("Pasted JSON is missing the 'nodes' object.");
       }
 
-      let cloudinaryUrl = `https://mock-supabase.example.com/${selectedFileName}`;
-      let supabaseUrl = `https://mock-supabase.example.com/${selectedFileName}`;
+      const fileName = selectedFileName || `${subcategories[selectedSubcategoryId]?.name || "Manual"}_Syllabus.pdf`;
+      let cloudinaryUrl = `https://mock-supabase.example.com/${fileName}`;
+      let supabaseUrl = `https://mock-supabase.example.com/${fileName}`;
 
       // Create document record in Firebase
       const db = getFirebaseDb();
@@ -243,10 +249,10 @@ ${extractedData.fullText.slice(0, 30000)}`
       if (!docId) throw new Error("Failed to create document key.");
 
       await set(newDocRef, {
-        title: selectedFileName,
+        title: fileName,
         cloudinaryUrl,
         supabaseStoragePath: supabaseUrl,
-        pages: extractedData.totalPages,
+        pages: extractedData ? extractedData.totalPages : 1,
         status: "running",
         uploadedBy: user?.uid ?? "unknown",
         createdAt: Date.now(),
@@ -256,28 +262,35 @@ ${extractedData.fullText.slice(0, 30000)}`
 
       // Programmatically build chunks page-by-page
       const chunks: Record<string, SyllabusChunk> = {};
-      extractedData.pages.forEach((p) => {
-        const chunkId = `chunk_${p.page}`;
-        chunks[chunkId] = {
-          text: p.text || "No text content on this page.",
-          page: p.page,
+      if (extractedData) {
+        extractedData.pages.forEach((p) => {
+          const chunkId = `chunk_${p.page}`;
+          chunks[chunkId] = {
+            text: p.text || "No text content on this page.",
+            page: p.page,
+            nodeIds: [],
+          };
+        });
+      } else {
+        chunks["chunk_1"] = {
+          text: `General curriculum syllabus for Category: ${categories[selectedCategoryId]?.name}, Subcategory: ${subcategories[selectedSubcategoryId]?.name}`,
+          page: 1,
           nodeIds: [],
         };
-      });
+      }
 
       // Link nodes and chunks programmatically
       const nodes: Record<string, SyllabusNode> = {};
       Object.entries(parsedResult.nodes).forEach(([nodeId, node]: [string, any]) => {
         const chunkIds: string[] = [];
-        if (node.pages && Array.isArray(node.pages)) {
-          node.pages.forEach((pageNumber: number) => {
-            const chunkId = `chunk_${pageNumber}`;
-            if (chunks[chunkId]) {
-              chunkIds.push(chunkId);
-              chunks[chunkId].nodeIds.push(nodeId);
-            }
-          });
-        }
+        const pagesArray = node.pages && Array.isArray(node.pages) ? node.pages : [1];
+        pagesArray.forEach((pageNumber: number) => {
+          const chunkId = `chunk_${pageNumber}`;
+          if (chunks[chunkId]) {
+            chunkIds.push(chunkId);
+            chunks[chunkId].nodeIds.push(nodeId);
+          }
+        });
         nodes[nodeId] = {
           title: node.title,
           kind: node.kind,
@@ -461,31 +474,64 @@ ${extractedData.fullText.slice(0, 30000)}`
               </div>
             </div>
 
-            {ingestMode === "manual" && extractedData ? (
+            {ingestMode === "manual" ? (
               <div className="space-y-4 pt-1">
-                {/* File Selected Badge */}
-                <div className="rounded-lg border bg-emerald-50/50 border-emerald-200 p-3 flex items-center justify-between">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <FileText className="h-4 w-4 text-emerald-600 shrink-0" />
-                    <span className="text-xs font-medium text-emerald-900 truncate">
-                      {selectedFileName}
-                    </span>
-                  </div>
-                  <span className="text-[10px] bg-emerald-100 text-emerald-800 py-0.5 px-2 rounded-full font-semibold shrink-0">
-                    Extracted
+                {/* Optional PDF Grounder */}
+                <div className="space-y-1.5 border rounded-lg p-2.5 bg-muted/20">
+                  <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider block">
+                    PDF Context (Optional)
                   </span>
+                  {extractedData ? (
+                    <div className="flex items-center justify-between gap-2 pt-0.5">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <FileText className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                        <span className="text-[11px] font-medium text-emerald-900 truncate">
+                          {selectedFileName}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setExtractedData(null);
+                          setSelectedFileName("");
+                        }}
+                        className="text-[10px] text-destructive hover:underline font-medium cursor-pointer shrink-0"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="pt-0.5">
+                      <label
+                        htmlFor="manual-pdf-uploader"
+                        className="text-[11px] text-primary hover:underline font-medium cursor-pointer flex items-center gap-1.5"
+                      >
+                        <FileUp className="h-3.5 w-3.5" />
+                        Upload PDF to ground prompt in text
+                      </label>
+                      <input
+                        id="manual-pdf-uploader"
+                        type="file"
+                        accept="application/pdf"
+                        className="hidden"
+                        onChange={handleFileSelect}
+                        disabled={isUploading}
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {/* Prompt Copier */}
                 <div className="space-y-1.5">
                   <Label>Step 1: Copy AI Prompt</Label>
                   <p className="text-[10px] text-muted-foreground leading-normal">
-                    This prompt contains instructions and the extracted PDF text for your external AI tools (Claude, ChatGPT, etc.).
+                    This prompt contains instructions and formatting rules for your external AI tools (Claude, ChatGPT, Gemini, etc.).
                   </p>
                   <Button
                     type="button"
                     variant="outline"
                     className="w-full text-xs font-semibold flex items-center justify-center gap-1.5 py-1.5 h-auto cursor-pointer"
+                    disabled={!selectedSubcategoryId}
                     onClick={() => {
                       navigator.clipboard.writeText(manualPromptString);
                       setCopiedPrompt(true);
@@ -540,7 +586,7 @@ ${extractedData.fullText.slice(0, 30000)}`
                     }}
                     className="text-xs cursor-pointer"
                   >
-                    Cancel
+                    Reset
                   </Button>
                 </div>
               </div>
