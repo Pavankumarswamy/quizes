@@ -48,7 +48,7 @@ export function UserShell({ children }: { children: ReactNode }) {
           {!isCollapsed && (
             <div className="flex items-center gap-2 truncate pl-1">
               <div className="h-5 w-5 rounded bg-primary shrink-0" />
-              <span className="truncate">QuizForge</span>
+              <span className="truncate">electricwisers</span>
             </div>
           )}
           {isCollapsed && (

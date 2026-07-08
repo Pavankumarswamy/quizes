@@ -13,7 +13,7 @@ function Landing() {
       <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
         <div className="flex items-center gap-2 font-semibold">
           <div className="h-7 w-7 rounded-lg bg-primary" />
-          QuizForge
+          electricwisers
         </div>
         <nav className="flex items-center gap-2">
           {user ? (

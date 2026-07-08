@@ -520,14 +520,14 @@ function QuizzesAdmin() {
                         size="icon"
                         variant="ghost"
                         onClick={() => toggleStatus(qid, q.status)}
+                        title={q.status === "published" ? "Set to draft" : "Publish"}
                       >
                         {q.status === "published" ? (
                           <X
                             className="h-4 w-4 text-muted-foreground hover:text-foreground"
-                            title="Set to draft"
                           />
                         ) : (
-                          <Check className="h-4 w-4 text-emerald-600" title="Publish" />
+                          <Check className="h-4 w-4 text-emerald-600" />
                         )}
                       </Button>
                       <Button

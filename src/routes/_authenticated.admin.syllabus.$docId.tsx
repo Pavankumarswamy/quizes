@@ -263,7 +263,6 @@ function SyllabusTreeEditor() {
             {isEditing ? (
               <div className="flex items-center gap-1.5 flex-1 max-w-md">
                 <Input
-                  size="sm"
                   className="h-8 text-sm"
                   value={editingTitle}
                   onChange={(e) => setEditingTitle(e.target.value)}
@@ -340,10 +339,10 @@ function SyllabusTreeEditor() {
               className="h-8 text-xs"
               onKeyDown={(e) => e.key === "Enter" && handleAddChild(nodeId)}
             />
-            <Button size="xs" onClick={() => handleAddChild(nodeId)}>
+            <Button size="sm" onClick={() => handleAddChild(nodeId)} className="h-8 py-1 px-3 text-xs">
               Add
             </Button>
-            <Button size="xs" variant="ghost" onClick={() => setAddingChildToId(null)}>
+            <Button size="sm" variant="ghost" onClick={() => setAddingChildToId(null)} className="h-8 py-1 px-3 text-xs">
               Cancel
             </Button>
           </div>

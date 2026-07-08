@@ -520,7 +520,7 @@ function AttemptEngine() {
                     <Input
                       id="blank-input"
                       placeholder="Type your response here..."
-                      value={selectedAnswer || ""}
+                      value={(selectedAnswer as string) || ""}
                       onChange={(e) => setSelectedAnswer(e.target.value)}
                       className="text-base"
                     />
@@ -564,7 +564,7 @@ function AttemptEngine() {
 
                     <div className="space-y-3.5 pt-2">
                       {currentQuestion.matchLeft?.map((left) => {
-                        const currentMapping = selectedAnswer || {};
+                        const currentMapping = (selectedAnswer as Record<string, string>) || {};
                         const selectedRightId = currentMapping[left.id] || "";
 
                         const handleSelectMapping = (rightId: string) => {
@@ -609,17 +609,17 @@ function AttemptEngine() {
                         <Button
                           type="button"
                           variant="ghost"
-                          size="xs"
+                          size="sm"
                           onClick={handleRunCodingStub}
                           disabled={isRunningCode}
-                          className="text-xs text-zinc-300 hover:text-white bg-zinc-800 border-zinc-700 hover:bg-zinc-700"
+                          className="text-xs text-zinc-300 hover:text-white bg-zinc-800 border-zinc-700 hover:bg-zinc-700 h-7"
                         >
                           <Play className="h-3 w-3 mr-1 fill-current text-emerald-500" /> Run Mock
                           Tests
                         </Button>
                       </div>
                       <textarea
-                        value={selectedAnswer || ""}
+                        value={(selectedAnswer as string) || ""}
                         onChange={(e) => setSelectedAnswer(e.target.value)}
                         className="w-full min-h-40 p-4 bg-zinc-950 font-mono text-xs leading-relaxed focus:outline-none resize-y border-transparent border-0 ring-0 text-emerald-400"
                         spellCheck="false"

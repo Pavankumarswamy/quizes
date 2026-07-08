@@ -452,7 +452,7 @@ function QuizResult() {
                             <span
                               className={`font-bold ${isCorrect ? "text-emerald-700" : "text-red-600"}`}
                             >
-                              {userAns || "(Blank)"}
+                              {(userAns as string) || "(Blank)"}
                             </span>
                           </div>
                           {isCorrect ? (
@@ -466,7 +466,7 @@ function QuizResult() {
                             <span className="text-muted-foreground block mb-0.5">
                               Expected Answer:
                             </span>
-                            <span className="font-bold text-emerald-700 text-sm">{q.answer}</span>
+                            <span className="font-bold text-emerald-700 text-sm">{String(q.answer)}</span>
                           </div>
                         )}
                       </div>
@@ -512,7 +512,8 @@ function QuizResult() {
                           const userPairedId = userMap[left.id];
                           const userPaired = q.matchRight?.find((r) => r.id === userPairedId);
 
-                          const correctPairedId = q.answer[left.id];
+                          const correctMap = (q.answer as Record<string, string>) || {};
+                          const correctPairedId = correctMap[left.id];
                           const correctPaired = q.matchRight?.find((r) => r.id === correctPairedId);
 
                           const isPairCorrect = userPairedId === correctPairedId;
@@ -554,7 +555,7 @@ function QuizResult() {
                             </Badge>
                           </div>
                           <pre className="p-4 overflow-x-auto whitespace-pre text-emerald-400 leading-relaxed text-[11px]">
-                            {userAns || "// No code submitted."}
+                            {(userAns as string) || "// No code submitted."}
                           </pre>
                         </div>
                       </div>
