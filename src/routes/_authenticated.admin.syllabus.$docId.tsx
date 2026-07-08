@@ -143,7 +143,7 @@ function SyllabusTreeEditor() {
         title: newUnitTitle.trim(),
         kind: "unit",
         parentId: null,
-        order: Object.values(nodes).filter((n) => n.parentId === null).length + 1,
+        order: Object.values(nodes).filter((n) => !n.parentId).length + 1,
       };
 
       await set(ref(db, `syllabusTrees/${docId}/nodes/${newId}`), newNode);
@@ -360,7 +360,7 @@ function SyllabusTreeEditor() {
   };
 
   const rootNodes = Object.entries(nodes)
-    .filter(([_, n]) => n.parentId === null)
+    .filter(([_, n]) => !n.parentId)
     .sort((a, b) => (a[1].order ?? 0) - (b[1].order ?? 0));
 
   if (loading) {
