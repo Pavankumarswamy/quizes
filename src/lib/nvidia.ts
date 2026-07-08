@@ -58,7 +58,7 @@ Rules:
 - Keep node IDs sequential: node_1, node_2...
 
 PDF TEXT (FULL):
-${extracted.fullText.slice(0, 40000)}`;
+${extracted.fullText.slice(0, 20000)}`;
 
   const raw = await callNvidiaApi(
     prompt,
