@@ -133,6 +133,10 @@
 }
 
 @layer base {
+  html {
+    zoom: 1.25;
+  }
+
   * {
     border-color: var(--color-border);
   }
