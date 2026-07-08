@@ -72,7 +72,7 @@ function getServerDb(): Database {
 // NVIDIA API helper (OpenAI-compatible endpoint)
 // ---------------------------------------------------------------------------
 const NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1";
-const NVIDIA_MODEL = "openai/gpt-oss-120b";
+const NVIDIA_MODEL = "meta/llama-3.1-8b-instruct";
 
 async function callNvidiaApi(prompt: string, systemPrompt?: string): Promise<string> {
   const apiKey = getEnvVar("NVIDIA_API_KEY") || "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";
