@@ -11,8 +11,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { FileText, Trash2, BookOpen, Clock, FileUp, RefreshCw } from "lucide-react";
-// We will create parsePdfAndChunk and extractSyllabusTree server functions in rag.functions.ts
 import { parsePdfAndChunk } from "@/lib/rag.functions";
+import { extractTextFromPdf } from "@/lib/pdf-extractor";
 
 export const Route = createFileRoute("/_authenticated/admin/documents")({
   component: DocumentsAdmin,
@@ -49,28 +49,37 @@ function DocumentsAdmin() {
     }
     setIsUploading(true);
     try {
+      // 1. Extract text from the PDF in the browser using PDF.js
+      toast.info("Reading PDF text with PDF.js...");
+      const extracted = await extractTextFromPdf(file);
+
+      if (!extracted.fullText.trim()) {
+        toast.warning(
+          "No text found in this PDF. It may be a scanned image — extraction may be limited.",
+        );
+      }
+
       let cloudinaryUrl = "";
       let supabaseUrl = "";
 
-      // 1. Upload to Supabase Storage (for server-side parsing)
+      // 2. Upload to Supabase Storage (for archiving)
       if (isSupabaseConfigured) {
         toast.info("Uploading PDF to Supabase Storage...");
         supabaseUrl = await uploadPdfToSupabase(file);
       } else {
-        toast.error("Supabase is not configured! Defaulting to mock path.");
         supabaseUrl = `https://mock-supabase.example.com/${file.name}`;
       }
 
-      // 2. Upload to Cloudinary (for viewing/delivery)
+      // 3. Upload to Cloudinary (for viewing/delivery)
       try {
         toast.info("Uploading PDF to Cloudinary...");
         cloudinaryUrl = await uploadToCloudinary(file);
       } catch (err) {
         console.warn("Cloudinary upload failed/skipped", err);
-        cloudinaryUrl = supabaseUrl; // Fallback
+        cloudinaryUrl = supabaseUrl;
       }
 
-      // 3. Save Document metadata in Firebase RTDB
+      // 4. Save Document metadata in Firebase RTDB
       const db = getFirebaseDb();
       const newDocRef = push(ref(db, "documents"));
       const docId = newDocRef.key;
@@ -84,17 +93,20 @@ function DocumentsAdmin() {
         pages: 0,
         status: "uploaded",
         uploadedBy: user?.uid ?? "unknown",
-        createdAt: Date.now(), // Use local timestamp for immediate display sorting
+        createdAt: Date.now(),
       };
 
       await set(newDocRef, docData);
-      toast.success("Document record saved!");
+      toast.success("Document saved! Starting AI organisation...");
 
-      // 4. Trigger Server Function PDF Parsing & Chunking
-      toast.info("Triggering AI RAG extraction...");
-      // We trigger the server function asynchronously so it runs in the background
-      parsePdfAndChunk({ docId }).catch((err) => {
+      // 5. Send extracted text to the server function for NVIDIA AI organisation
+      parsePdfAndChunk({
+        docId,
+        extractedText: extracted.fullText,
+        totalPages: extracted.totalPages,
+      }).catch((err) => {
         console.error("PDF Parsing failed", err);
+        toast.error("AI organisation failed. You can retry from the document list.");
       });
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed to upload document.");
@@ -148,12 +160,13 @@ function DocumentsAdmin() {
   };
 
   const handleRetryParse = async (docId: string) => {
-    toast.info("Retrying extraction...");
+    toast.info(
+      "To retry, please re-upload the PDF file. The extracted text is needed for AI organisation.",
+    );
+    // Retry requires re-uploading because extracted text lives only in memory.
+    // Reset to uploaded status so the UI clears the failed badge.
     try {
       await set(ref(getFirebaseDb(), `documents/${docId}/status`), "uploaded");
-      parsePdfAndChunk({ docId }).catch((err) => {
-        console.error("PDF Parsing failed", err);
-      });
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Retry failed.");
     }
