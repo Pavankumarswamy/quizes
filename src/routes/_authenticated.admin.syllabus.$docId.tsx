@@ -372,7 +372,7 @@ function SyllabusTreeEditor() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-6">
+    <div className="mx-auto max-w-7xl space-y-6 p-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="space-y-1">
           <Button asChild variant="ghost" size="sm" className="-ml-2 text-muted-foreground">

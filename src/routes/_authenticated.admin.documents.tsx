@@ -306,7 +306,7 @@ ${extractedData.fullText.slice(0, 30000)}`
   const docList = Object.entries(documents).sort((a, b) => b[1].createdAt - a[1].createdAt);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-6">
+    <div className="mx-auto max-w-7xl space-y-6 p-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Syllabus Documents</h1>
         <p className="text-sm text-muted-foreground">
