@@ -1,8 +1,8 @@
 import { callNvidiaProxy } from "./rag.functions";
 
 export async function callNvidiaApi(prompt: string, systemPrompt?: string): Promise<string> {
-  // Call the server function directly. TanStack Start compiles this into a secure same-origin RPC call.
-  return callNvidiaProxy({ prompt, systemPrompt });
+  // Pass wrapped in { data } to ensure compatibility with standard TanStack server function signatures
+  return callNvidiaProxy({ data: { prompt, systemPrompt } });
 }
 
 /** Strip markdown code fences the model sometimes adds around JSON */

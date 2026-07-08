@@ -116,13 +116,22 @@ async function callNvidiaApi(prompt: string, systemPrompt?: string): Promise<str
 
 export const callNvidiaProxy = createServerFn({ method: "POST" })
   .validator(
-    z.object({
-      prompt: z.string(),
-      systemPrompt: z.string().optional(),
-    })
+    z.union([
+      z.object({
+        prompt: z.string(),
+        systemPrompt: z.string().optional(),
+      }),
+      z.object({
+        data: z.object({
+          prompt: z.string(),
+          systemPrompt: z.string().optional(),
+        })
+      })
+    ])
   )
   .handler(async ({ data }) => {
-    return callNvidiaApi(data.prompt, data.systemPrompt);
+    const payload = "data" in data ? (data.data as any) : data;
+    return callNvidiaApi(payload.prompt, payload.systemPrompt);
   });
 
 /** Strip markdown code fences the model sometimes wraps JSON in */
