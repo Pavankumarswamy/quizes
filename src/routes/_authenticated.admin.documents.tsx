@@ -99,7 +99,7 @@ function DocumentsAdmin() {
       // 5. Call NVIDIA API directly from the browser
       toast.info("Sending to NVIDIA AI for organisation...");
       try {
-        const syllabus = await organisePdfWithNvidia(extracted.fullText);
+        const syllabus = await organisePdfWithNvidia(extracted);
 
         // 6. Write syllabus tree + chunks to Firebase
         await set(ref(db, `syllabusTrees/${docId}/nodes`), syllabus.nodes);
