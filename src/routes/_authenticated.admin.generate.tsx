@@ -29,6 +29,8 @@ import {
 // We will modify rag.functions.ts to export generateAiQuestions server function
 import { generateAiQuestions } from "@/lib/rag.functions";
 import { z } from "zod";
+import { Checkbox } from "@/components/ui/checkbox";
+
 
 const searchSchema = z.object({
   docId: z.string().optional(),
@@ -428,7 +430,7 @@ function AIQuizGenerator() {
                       <div key={id} className="flex items-start gap-2.5 text-xs text-foreground">
                         <Checkbox
                           checked={checked}
-                          onCheckedChange={(val) => handleSelectNode(id, !!val)}
+                          onCheckedChange={(val: boolean | "indeterminate") => handleSelectNode(id, !!val)}
                           id={`node-chk-${id}`}
                           className="mt-0.5"
                         />
