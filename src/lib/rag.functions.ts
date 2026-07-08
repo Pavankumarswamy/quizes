@@ -3,6 +3,7 @@ import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
 import { getDatabase, type Database, ref, update, set, get, push, serverTimestamp } from "firebase/database";
 import fs from "fs";
 import path from "path";
+import { z } from "zod";
 
 // ---------------------------------------------------------------------------
 // Robust server-side env variable reader (reads process.env or .env file directly)
@@ -112,20 +113,16 @@ async function callNvidiaApi(prompt: string, systemPrompt?: string): Promise<str
   return content;
 }
 
+
 export const callNvidiaProxy = createServerFn({ method: "POST" })
-  .validator((d: { prompt: string; systemPrompt?: string }) => d)
-  .handler(async (ctx) => {
-    console.log("[callNvidiaProxy] ctx keys:", Object.keys(ctx));
-    const data = ctx.data || (ctx as any);
-    if (!data || typeof data !== "object") {
-      throw new Error(`[callNvidiaProxy] data is undefined or not an object`);
-    }
-    const prompt = data.prompt;
-    const systemPrompt = data.systemPrompt;
-    if (!prompt) {
-      throw new Error(`[callNvidiaProxy] prompt is missing. payload: ${JSON.stringify(data)}`);
-    }
-    return callNvidiaApi(prompt, systemPrompt);
+  .validator(
+    z.object({
+      prompt: z.string(),
+      systemPrompt: z.string().optional(),
+    })
+  )
+  .handler(async ({ data }) => {
+    return callNvidiaApi(data.prompt, data.systemPrompt);
   });
 
 /** Strip markdown code fences the model sometimes wraps JSON in */
