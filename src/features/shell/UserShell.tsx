@@ -19,12 +19,12 @@ export function UserShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex h-screen w-full overflow-hidden">
-      <aside className="hidden w-60 flex-col border-r bg-card md:flex h-screen sticky top-0 overflow-y-auto shrink-0 no-scrollbar">
+      <aside className="hidden w-60 flex-col border-r bg-card md:flex h-full shrink-0">
         <div className="flex h-14 items-center gap-2 border-b px-4 font-semibold shrink-0">
           <div className="h-6 w-6 rounded-md bg-primary" />
           QuizForge
         </div>
-        <nav className="space-y-1 p-3 shrink-0">
+        <nav className="flex-1 space-y-1 p-3 overflow-y-auto no-scrollbar">
           {nav.map((n) => {
             const active = pathname === n.to;
             const Icon = n.icon;
@@ -53,7 +53,7 @@ export function UserShell({ children }: { children: ReactNode }) {
             </Link>
           )}
         </nav>
-        <div className="mt-auto border-t p-3 shrink-0">
+        <div className="border-t p-3 shrink-0">
           <div className="mb-2 truncate text-xs text-muted-foreground">{user?.email}</div>
           <Button
             variant="outline"
@@ -68,7 +68,7 @@ export function UserShell({ children }: { children: ReactNode }) {
           </Button>
         </div>
       </aside>
-      <main className="flex-1 bg-muted/20 h-screen overflow-y-auto">{children}</main>
+      <main className="flex-1 bg-muted/20 h-full overflow-y-auto">{children}</main>
     </div>
   );
 }
