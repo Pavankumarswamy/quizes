@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { onValue, ref, push, set, remove } from "firebase/database";
+import { onValue, ref, push, set, remove, update } from "firebase/database";
 import { toast } from "sonner";
 import { getFirebaseDb } from "@/lib/firebase";
 import { useAuth } from "@/features/auth/AuthProvider";
@@ -11,8 +11,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { FileText, Trash2, BookOpen, Clock, FileUp, RefreshCw } from "lucide-react";
-import { parsePdfAndChunk } from "@/lib/rag.functions";
 import { extractTextFromPdf } from "@/lib/pdf-extractor";
+import { organisePdfWithNvidia } from "@/lib/nvidia";
 
 export const Route = createFileRoute("/_authenticated/admin/documents")({
   component: DocumentsAdmin,
@@ -52,63 +52,70 @@ function DocumentsAdmin() {
     }
     setIsUploading(true);
     try {
-      // 1. Extract text from the PDF in the browser using PDF.js
-      toast.info("Reading PDF text with PDF.js...");
+      // 1. Extract text from PDF in the browser using PDF.js
+      toast.info("Reading PDF text...");
       const extracted = await extractTextFromPdf(file);
 
       if (!extracted.fullText.trim()) {
-        toast.warning(
-          "No text found in this PDF. It may be a scanned image — extraction may be limited.",
-        );
+        toast.warning("No text found — may be a scanned PDF. AI extraction may be limited.");
       }
 
       let cloudinaryUrl = "";
       let supabaseUrl = "";
 
-      // 2. Upload to Supabase Storage (for archiving)
+      // 2. Upload to Supabase Storage
       if (isSupabaseConfigured) {
-        toast.info("Uploading PDF to Supabase Storage...");
+        toast.info("Uploading to Supabase...");
         supabaseUrl = await uploadPdfToSupabase(file);
       } else {
         supabaseUrl = `https://mock-supabase.example.com/${file.name}`;
       }
 
-      // 3. Upload to Cloudinary (for viewing/delivery)
+      // 3. Upload to Cloudinary
       try {
-        toast.info("Uploading PDF to Cloudinary...");
+        toast.info("Uploading to Cloudinary...");
         cloudinaryUrl = await uploadToCloudinary(file);
       } catch (err) {
         console.warn("Cloudinary upload failed/skipped", err);
         cloudinaryUrl = supabaseUrl;
       }
 
-      // 4. Save Document metadata + extracted text in Firebase.
-      //    We store extractedText in Firebase so the server function
-      //    can read it without a huge RPC payload crossing the boundary.
+      // 4. Create document record in Firebase
       const db = getFirebaseDb();
       const newDocRef = push(ref(db, "documents"));
       const docId = newDocRef.key;
-
-      if (!docId) throw new Error("Failed to create document record key.");
+      if (!docId) throw new Error("Failed to create document key.");
 
       await set(newDocRef, {
         title: file.name,
         cloudinaryUrl,
         supabaseStoragePath: supabaseUrl,
         pages: extracted.totalPages,
-        status: "uploaded",
+        status: "running",
         uploadedBy: user?.uid ?? "unknown",
         createdAt: Date.now(),
-        extractedText: extracted.fullText, // temp field — removed by server after parsing
       });
 
-      toast.success("Document saved! Sending to NVIDIA AI for organisation...");
+      // 5. Call NVIDIA API directly from the browser
+      toast.info("Sending to NVIDIA AI for organisation...");
+      try {
+        const syllabus = await organisePdfWithNvidia(extracted.fullText);
 
-      // 5. Call server function with just the docId — it reads the text from Firebase
-      parsePdfAndChunk({ docId }).catch((err) => {
-        console.error("PDF Parsing failed", err);
-        toast.error("AI organisation failed. Check the document list for details.");
-      });
+        // 6. Write syllabus tree + chunks to Firebase
+        await set(ref(db, `syllabusTrees/${docId}/nodes`), syllabus.nodes);
+        await set(ref(db, `docChunks/${docId}`), syllabus.chunks);
+        await update(ref(db, `documents/${docId}`), { status: "parsed" });
+
+        toast.success("Document organised successfully!");
+      } catch (aiErr: unknown) {
+        const msg = aiErr instanceof Error ? aiErr.message : "AI organisation failed";
+        console.error("NVIDIA API error:", msg);
+        await update(ref(db, `documents/${docId}`), {
+          status: "failed",
+          lastError: msg,
+        });
+        toast.error(`AI failed: ${msg.slice(0, 80)}`);
+      }
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed to upload document.");
     } finally {
