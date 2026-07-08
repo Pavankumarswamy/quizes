@@ -50,7 +50,6 @@ function DocumentsAdmin() {
   const [dragActive, setDragActive] = useState(false);
 
   // Ingest mode and manual copy/paste states
-  const [ingestMode, setIngestMode] = useState<"auto" | "manual">("auto");
   const [extractedData, setExtractedData] = useState<{
     fullText: string;
     totalPages: number;
@@ -92,88 +91,18 @@ function DocumentsAdmin() {
       return;
     }
     if (!selectedCategoryId || !selectedSubcategoryId) {
-      toast.error("Please select a Category and Subcategory before uploading!");
+      toast.error("Please select a Category and Subcategory first!");
       return;
     }
     setIsUploading(true);
     try {
-      // 1. Extract text from PDF in the browser using PDF.js
       toast.info("Reading PDF text...");
       const extracted = await extractTextFromPdf(file);
-
-      if (ingestMode === "manual") {
-        setExtractedData(extracted);
-        setSelectedFileName(file.name);
-        toast.success("PDF text extracted! Please copy the prompt and paste the generated JSON below.");
-        setIsUploading(false);
-        return;
-      }
-
-
-      if (!extracted.fullText.trim()) {
-        toast.warning("No text found — may be a scanned PDF. AI extraction may be limited.");
-      }
-
-      let cloudinaryUrl = "";
-      let supabaseUrl = "";
-
-      // 2. Upload to Supabase Storage
-      if (isSupabaseConfigured) {
-        toast.info("Uploading to Supabase...");
-        supabaseUrl = await uploadPdfToSupabase(file);
-      } else {
-        supabaseUrl = `https://mock-supabase.example.com/${file.name}`;
-      }
-
-      // 3. Upload to Cloudinary
-      try {
-        toast.info("Uploading to Cloudinary...");
-        cloudinaryUrl = await uploadToCloudinary(file);
-      } catch (err) {
-        console.warn("Cloudinary upload failed/skipped", err);
-        cloudinaryUrl = supabaseUrl;
-      }
-
-      // 4. Create document record in Firebase
-      const db = getFirebaseDb();
-      const newDocRef = push(ref(db, "documents"));
-      const docId = newDocRef.key;
-      if (!docId) throw new Error("Failed to create document key.");
-
-      await set(newDocRef, {
-        title: file.name,
-        cloudinaryUrl,
-        supabaseStoragePath: supabaseUrl,
-        pages: extracted.totalPages,
-        status: "running",
-        uploadedBy: user?.uid ?? "unknown",
-        createdAt: Date.now(),
-        categoryId: selectedCategoryId,
-        subcategoryId: selectedSubcategoryId,
-      });
-
-      // 5. Call NVIDIA API directly from the browser
-      toast.info("Sending to NVIDIA AI for organisation...");
-      try {
-        const syllabus = await organisePdfWithNvidia(extracted);
-
-        // 6. Write syllabus tree + chunks to Firebase
-        await set(ref(db, `syllabusTrees/${docId}/nodes`), syllabus.nodes);
-        await set(ref(db, `docChunks/${docId}`), syllabus.chunks);
-        await update(ref(db, `documents/${docId}`), { status: "parsed" });
-
-        toast.success("Document organised successfully!");
-      } catch (aiErr: unknown) {
-        const msg = aiErr instanceof Error ? aiErr.message : "AI organisation failed";
-        console.error("NVIDIA API error:", msg);
-        await update(ref(db, `documents/${docId}`), {
-          status: "failed",
-          lastError: msg,
-        });
-        toast.error(`AI failed: ${msg.slice(0, 80)}`);
-      }
+      setExtractedData(extracted);
+      setSelectedFileName(file.name);
+      toast.success("PDF text extracted! Copy the prompt and paste the generated JSON below.");
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Failed to upload document.");
+      toast.error(err instanceof Error ? err.message : "Failed to extract PDF text.");
     } finally {
       setIsUploading(false);
     }
@@ -439,199 +368,125 @@ ${extractedData.fullText.slice(0, 30000)}`
               </Select>
             </div>
 
-            {/* Ingestion Mode Toggle */}
-            <div className="space-y-1.5 pb-2">
-              <Label>Ingestion Mode</Label>
-              <div className="flex rounded-lg bg-muted p-1 text-[11px] font-medium border">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIngestMode("auto");
-                    setExtractedData(null);
-                  }}
-                  className={`flex-1 rounded-md py-1.5 text-center transition cursor-pointer ${
-                    ingestMode === "auto"
-                      ? "bg-background text-foreground shadow-xs border"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  Auto AI Ingest
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIngestMode("manual");
-                    setExtractedData(null);
-                  }}
-                  className={`flex-1 rounded-md py-1.5 text-center transition cursor-pointer ${
-                    ingestMode === "manual"
-                      ? "bg-background text-foreground shadow-xs border"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  Copy Prompt / Paste JSON
-                </button>
-              </div>
-            </div>
-
-            {ingestMode === "manual" ? (
-              <div className="space-y-4 pt-1">
-                {/* Optional PDF Grounder */}
-                <div className="space-y-1.5 border rounded-lg p-2.5 bg-muted/20">
-                  <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider block">
-                    PDF Context (Optional)
-                  </span>
-                  {extractedData ? (
-                    <div className="flex items-center justify-between gap-2 pt-0.5">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <FileText className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-                        <span className="text-[11px] font-medium text-emerald-900 truncate">
-                          {selectedFileName}
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setExtractedData(null);
-                          setSelectedFileName("");
-                        }}
-                        className="text-[10px] text-destructive hover:underline font-medium cursor-pointer shrink-0"
-                      >
-                        Remove
-                      </button>
+            <div className="space-y-4 pt-2">
+              {/* Optional PDF Grounder */}
+              <div className="space-y-1.5 border rounded-lg p-2.5 bg-muted/20">
+                <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider block">
+                  PDF Context (Optional)
+                </span>
+                {extractedData ? (
+                  <div className="flex items-center justify-between gap-2 pt-0.5">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <FileText className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                      <span className="text-[11px] font-medium text-emerald-900 truncate">
+                        {selectedFileName}
+                      </span>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExtractedData(null);
+                        setSelectedFileName("");
+                      }}
+                      className="text-[10px] text-destructive hover:underline font-medium cursor-pointer shrink-0"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ) : (
+                  <div className="pt-0.5">
+                    <label
+                      htmlFor="manual-pdf-uploader"
+                      className={`text-[11px] text-primary hover:underline font-medium cursor-pointer flex items-center gap-1.5 ${
+                        !selectedSubcategoryId ? "pointer-events-none opacity-40" : ""
+                      }`}
+                    >
+                      <FileUp className="h-3.5 w-3.5" />
+                      Upload PDF to ground prompt in text
+                    </label>
+                    <input
+                      id="manual-pdf-uploader"
+                      type="file"
+                      accept="application/pdf"
+                      className="hidden"
+                      onChange={handleFileSelect}
+                      disabled={isUploading || !selectedSubcategoryId}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Prompt Copier */}
+              <div className="space-y-1.5">
+                <Label>Step 1: Copy AI Prompt</Label>
+                <p className="text-[10px] text-muted-foreground leading-normal">
+                  This prompt contains instructions and formatting rules for your external AI tools (Claude, ChatGPT, Gemini, etc.).
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full text-xs font-semibold flex items-center justify-center gap-1.5 py-1.5 h-auto cursor-pointer"
+                  disabled={!selectedSubcategoryId}
+                  onClick={() => {
+                    navigator.clipboard.writeText(manualPromptString);
+                    setCopiedPrompt(true);
+                    toast.success("AI Prompt copied to clipboard!");
+                    setTimeout(() => setCopiedPrompt(false), 2000);
+                  }}
+                >
+                  {copiedPrompt ? (
+                    <>
+                      <Check className="h-3.5 w-3.5 text-emerald-600" />
+                      Prompt Copied!
+                    </>
                   ) : (
-                    <div className="pt-0.5">
-                      <label
-                        htmlFor="manual-pdf-uploader"
-                        className="text-[11px] text-primary hover:underline font-medium cursor-pointer flex items-center gap-1.5"
-                      >
-                        <FileUp className="h-3.5 w-3.5" />
-                        Upload PDF to ground prompt in text
-                      </label>
-                      <input
-                        id="manual-pdf-uploader"
-                        type="file"
-                        accept="application/pdf"
-                        className="hidden"
-                        onChange={handleFileSelect}
-                        disabled={isUploading}
-                      />
-                    </div>
+                    <>
+                      <Copy className="h-3.5 w-3.5 text-muted-foreground" />
+                      Copy AI Prompt
+                    </>
                   )}
-                </div>
-
-                {/* Prompt Copier */}
-                <div className="space-y-1.5">
-                  <Label>Step 1: Copy AI Prompt</Label>
-                  <p className="text-[10px] text-muted-foreground leading-normal">
-                    This prompt contains instructions and formatting rules for your external AI tools (Claude, ChatGPT, Gemini, etc.).
-                  </p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full text-xs font-semibold flex items-center justify-center gap-1.5 py-1.5 h-auto cursor-pointer"
-                    disabled={!selectedSubcategoryId}
-                    onClick={() => {
-                      navigator.clipboard.writeText(manualPromptString);
-                      setCopiedPrompt(true);
-                      toast.success("AI Prompt copied to clipboard!");
-                      setTimeout(() => setCopiedPrompt(false), 2000);
-                    }}
-                  >
-                    {copiedPrompt ? (
-                      <>
-                        <Check className="h-3.5 w-3.5 text-emerald-600" />
-                        Prompt Copied!
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-                        Copy AI Prompt
-                      </>
-                    )}
-                  </Button>
-                </div>
-
-                {/* JSON Paste Area */}
-                <div className="space-y-1.5">
-                  <Label htmlFor="json-paste-area">Step 2: Paste Generated JSON</Label>
-                  <Textarea
-                    id="json-paste-area"
-                    placeholder='{"nodes": {"node_1": {"title": "Unit 1...", "kind": "unit", ...}}}'
-                    rows={6}
-                    value={pastedJson}
-                    onChange={(e) => setPastedJson(e.target.value)}
-                    className="font-mono text-[10px] p-2 leading-relaxed resize-y"
-                  />
-                </div>
-
-                {/* Import Buttons */}
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    onClick={handleManualImport}
-                    className="flex-1 text-xs cursor-pointer"
-                    disabled={isUploading || !pastedJson.trim()}
-                  >
-                    {isUploading ? "Importing..." : "Import Syllabus"}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => {
-                      setExtractedData(null);
-                      setPastedJson("");
-                      setSelectedFileName("");
-                    }}
-                    className="text-xs cursor-pointer"
-                  >
-                    Reset
-                  </Button>
-                </div>
+                </Button>
               </div>
-            ) : (
-              <div
-                onDragEnter={handleDrag}
-                onDragOver={handleDrag}
-                onDragLeave={handleDrag}
-                onDrop={handleDrop}
-                className={`relative border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center text-center transition cursor-pointer ${
-                  dragActive
-                    ? "border-primary bg-primary/5"
-                    : "border-muted-foreground/20 hover:bg-muted/30"
-                } ${isUploading || !selectedSubcategoryId ? "pointer-events-none opacity-50 bg-muted/10" : ""}`}
-              >
-                <FileUp className="h-9 w-9 text-muted-foreground mb-2 stroke-1.5" />
-                <p className="text-xs font-semibold text-foreground mb-1">
-                  {!selectedSubcategoryId
-                    ? "Select Subcategory to Unlock"
-                    : isUploading
-                    ? "Uploading file..."
-                    : "Drag & Drop PDF Here"}
-                </p>
-                <p className="text-[9px] text-muted-foreground mb-3">
-                  Supported format: PDF up to 50 pages
-                </p>
 
-                <Label
-                  htmlFor="pdf-file-uploader"
-                  className={`inline-flex h-8 items-center justify-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm hover:bg-primary/90 transition cursor-pointer ${
-                    !selectedSubcategoryId ? "pointer-events-none opacity-40" : ""
-                  }`}
-                >
-                  Choose File
-                </Label>
-                <input
-                  id="pdf-file-uploader"
-                  type="file"
-                  accept="application/pdf"
-                  className="hidden"
-                  onChange={handleFileSelect}
-                  disabled={isUploading || !selectedSubcategoryId}
+              {/* JSON Paste Area */}
+              <div className="space-y-1.5">
+                <Label htmlFor="json-paste-area">Step 2: Paste Generated JSON</Label>
+                <Textarea
+                  id="json-paste-area"
+                  placeholder='{"nodes": {"node_1": {"title": "Unit 1...", "kind": "unit", ...}}}'
+                  rows={6}
+                  value={pastedJson}
+                  onChange={(e) => setPastedJson(e.target.value)}
+                  className="font-mono text-[10px] p-2 leading-relaxed resize-y"
+                  disabled={!selectedSubcategoryId}
                 />
               </div>
-            )}
+
+              {/* Import Buttons */}
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  onClick={handleManualImport}
+                  className="flex-1 text-xs cursor-pointer"
+                  disabled={isUploading || !pastedJson.trim() || !selectedSubcategoryId}
+                >
+                  {isUploading ? "Importing..." : "Import Syllabus"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setExtractedData(null);
+                    setPastedJson("");
+                    setSelectedFileName("");
+                  }}
+                  className="text-xs cursor-pointer"
+                  disabled={!selectedSubcategoryId}
+                >
+                  Reset
+                </Button>
+              </div>
+            </div>
           </CardContent>
         </Card>
 
