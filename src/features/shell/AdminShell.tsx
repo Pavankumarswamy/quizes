@@ -32,7 +32,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-screen w-full">
-      <aside className="hidden w-64 flex-col border-r bg-card md:flex">
+      <aside className="hidden w-64 flex-col border-r bg-card md:flex h-screen sticky top-0 overflow-y-auto shrink-0">
         <div className="flex h-14 items-center gap-2 border-b px-4 font-semibold">
           <div className="h-6 w-6 rounded-md bg-primary" />
           Admin console
