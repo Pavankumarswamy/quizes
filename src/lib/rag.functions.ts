@@ -114,8 +114,18 @@ async function callNvidiaApi(prompt: string, systemPrompt?: string): Promise<str
 
 export const callNvidiaProxy = createServerFn({ method: "POST" })
   .validator((d: { prompt: string; systemPrompt?: string }) => d)
-  .handler(async ({ data }) => {
-    return callNvidiaApi(data.prompt, data.systemPrompt);
+  .handler(async (ctx) => {
+    console.log("[callNvidiaProxy] ctx keys:", Object.keys(ctx));
+    const data = ctx.data || (ctx as any);
+    if (!data || typeof data !== "object") {
+      throw new Error(`[callNvidiaProxy] data is undefined or not an object`);
+    }
+    const prompt = data.prompt;
+    const systemPrompt = data.systemPrompt;
+    if (!prompt) {
+      throw new Error(`[callNvidiaProxy] prompt is missing. payload: ${JSON.stringify(data)}`);
+    }
+    return callNvidiaApi(prompt, systemPrompt);
   });
 
 /** Strip markdown code fences the model sometimes wraps JSON in */
