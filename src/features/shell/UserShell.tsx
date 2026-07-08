@@ -24,7 +24,7 @@ export function UserShell({ children }: { children: ReactNode }) {
           <div className="h-6 w-6 rounded-md bg-primary" />
           QuizForge
         </div>
-        <nav className="flex-1 space-y-1 p-3">
+        <nav className="space-y-1 p-3">
           {nav.map((n) => {
             const active = pathname === n.to;
             const Icon = n.icon;

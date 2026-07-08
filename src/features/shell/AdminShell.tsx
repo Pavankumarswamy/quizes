@@ -37,7 +37,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
           <div className="h-6 w-6 rounded-md bg-primary" />
           Admin console
         </div>
-        <nav className="flex-1 space-y-1 p-3">
+        <nav className="space-y-1 p-3">
           {nav.map((n) => {
             const active = n.exact ? pathname === n.to : pathname.startsWith(n.to);
             const Icon = n.icon;
