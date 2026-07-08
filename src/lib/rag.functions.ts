@@ -9,9 +9,11 @@ const NVIDIA_MODEL = "meta/llama-3.1-8b-instruct";
 
 async function callNvidiaApi(prompt: string, systemPrompt?: string): Promise<string> {
   const isDev = import.meta.env.DEV;
-  const url = isDev ? `${NVIDIA_BASE_URL}/chat/completions` : "/nvidia-proxy.php";
-  
-  const apiKey = import.meta.env.VITE_NVIDIA_API_KEY || "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";
+  const url = isDev ? "/api/nvidia/chat/completions" : "/nvidia-proxy.php";
+
+  const apiKey =
+    import.meta.env.VITE_NVIDIA_API_KEY ||
+    "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";
   const messages: { role: string; content: string }[] = [];
 
   if (systemPrompt) {
@@ -22,7 +24,7 @@ async function callNvidiaApi(prompt: string, systemPrompt?: string): Promise<str
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
-  
+
   if (isDev) {
     headers["Authorization"] = `Bearer ${apiKey}`;
   }
@@ -100,7 +102,9 @@ type ParseParams = {
   docId: string;
 };
 
-export async function parsePdfAndChunk(data: ParseParams): Promise<{ success: boolean; error?: string }> {
+export async function parsePdfAndChunk(
+  data: ParseParams,
+): Promise<{ success: boolean; error?: string }> {
   const { docId } = data;
   const db = getFirebaseDb();
 
@@ -210,7 +214,9 @@ type JobData = {
   createdBy: string;
 };
 
-export async function generateAiQuestions(data: any): Promise<{ success: boolean; count?: number; error?: string }> {
+export async function generateAiQuestions(
+  data: any,
+): Promise<{ success: boolean; count?: number; error?: string }> {
   const payload = data && "data" in data ? (data.data as any) : data;
   const jobId = payload.jobId;
   const db = getFirebaseDb();
@@ -222,10 +228,22 @@ export async function generateAiQuestions(data: any): Promise<{ success: boolean
     if (!jobSnap.exists()) throw new Error("Job parameters not found");
     const job = jobSnap.val() as JobData;
 
-    const catSnap = await get(ref(db, "categories"));
-    let defaultCatId = "";
-    if (catSnap.exists()) {
-      defaultCatId = Object.keys(catSnap.val() as object)[0] || "";
+    // Fetch document category/subcategory
+    const docSnap = await get(ref(db, `documents/${job.docId}`));
+    let targetCatId = "";
+    let targetSubCatId = "";
+    if (docSnap.exists()) {
+      const docVal = docSnap.val() as { categoryId?: string; subcategoryId?: string };
+      targetCatId = docVal.categoryId || "";
+      targetSubCatId = docVal.subcategoryId || "";
+    }
+
+    // Fallback to first category if document lacks it
+    if (!targetCatId) {
+      const catSnap = await get(ref(db, "categories"));
+      if (catSnap.exists()) {
+        targetCatId = Object.keys(catSnap.val() as object)[0] || "";
+      }
     }
 
     const difficulty = job.difficulty === "mixed" ? "medium" : job.difficulty;
@@ -242,33 +260,48 @@ export async function generateAiQuestions(data: any): Promise<{ success: boolean
       : {};
 
     const relevantChunkIds = new Set<string>();
+    const topicTitles: string[] = [];
+
     for (const nodeId of job.nodeIds) {
       const node = allNodes[nodeId];
-      if (node?.chunkIds) node.chunkIds.forEach((cid) => relevantChunkIds.add(cid));
+      if (node) {
+        if (node.title) topicTitles.push(node.title);
+        if (node.chunkIds) node.chunkIds.forEach((cid) => relevantChunkIds.add(cid));
+      }
+    }
+
+    let chunkText = "";
+    for (const cid of relevantChunkIds) {
+      const chunk = allChunks[cid];
+      // Ignore mock chunk text which just contains category metadata
+      if (chunk && !chunk.text.includes("General curriculum syllabus for Category:")) {
+        chunkText += `\n\n${chunk.text}`;
+        if (chunkText.length > 5000) break;
+      }
     }
 
     let contextText = "";
-    for (const cid of relevantChunkIds) {
-      const chunk = allChunks[cid];
-      if (chunk) {
-        contextText += `\n\n${chunk.text}`;
-        if (contextText.length > 5000) break;
-      }
+    if (chunkText.trim()) {
+      contextText = `SYLLABUS TOPICS TO COVER:\n- ${topicTitles.join("\\n- ")}\n\nREFERENCE MATERIAL:\n${chunkText.slice(0, 4000)}`;
+    } else {
+      contextText = `You are an expert examiner. Generate questions testing the student's knowledge on the following specific syllabus topics:\n- ${topicTitles.join("\\n- ")}\n\nUse your extensive internal knowledge base to generate highly accurate, topic-specific questions for these exact topics.`;
     }
-    if (!contextText.trim()) contextText = "General knowledge on the subject.";
 
     const buildPrompt = (type: string, count: number, schema: string) =>
-      `Based on this content, generate exactly ${count} ${type} question(s).
+      `Based on the content and topics provided below, generate EXACTLY ${count} ${type} question(s).
+
+CRITICAL INSTRUCTIONS:
+1. You MUST provide a proper, detailed step-by-step explanation for the correct answer inside the "explanation" field.
+2. The overall difficulty should be: ${difficulty}.
+3. The questions MUST be strictly about the academic subjects listed in "SYLLABUS TOPICS". Do NOT generate questions about the document structure or categories.
 
 CONTENT:
-${contextText.slice(0, 4000)}
+${contextText}
 
-DIFFICULTY: ${difficulty}
-
-Return ONLY a valid JSON array matching this schema:
+You MUST return ONLY a valid JSON array matching this exact schema:
 ${schema}
 
-No markdown, no code fences, no explanation.`;
+IMPORTANT: Do NOT wrap the JSON in markdown fences. Do NOT write any introductory or concluding text. Your entire response must start with '[' and end with ']'.`;
 
     let producedCount = 0;
 
@@ -280,7 +313,10 @@ No markdown, no code fences, no explanation.`;
     ) {
       if (count <= 0) return;
       try {
-        const raw = await callNvidiaApi(prompt);
+        const raw = await callNvidiaApi(
+          prompt,
+          "You are an expert AI quiz generator. You must output ONLY raw, valid JSON arrays. Never include markdown fences or conversational text."
+        );
         const items = cleanAndParseJson<T[]>(raw);
         for (const item of items.slice(0, count)) {
           await saveFn(item);
@@ -288,6 +324,7 @@ No markdown, no code fences, no explanation.`;
         }
       } catch (e) {
         console.error(`[generateAiQuestions] failed for batch:`, e);
+        throw e;
       }
     }
 
@@ -312,8 +349,8 @@ No markdown, no code fences, no explanation.`;
           options: item.options,
           answer: item.answer,
           explanation: item.explanation,
-          categoryId: defaultCatId,
-          subcategoryId: "",
+          categoryId: targetCatId,
+          subcategoryId: targetSubCatId,
           difficulty,
           marks: 1,
           negativeMarks: 0.25,
@@ -346,8 +383,8 @@ No markdown, no code fences, no explanation.`;
           options: item.options,
           answer: item.answer,
           explanation: item.explanation,
-          categoryId: defaultCatId,
-          subcategoryId: "",
+          categoryId: targetCatId,
+          subcategoryId: targetSubCatId,
           difficulty,
           marks: 2,
           negativeMarks: 0,
@@ -374,8 +411,8 @@ No markdown, no code fences, no explanation.`;
           text: item.text,
           answer: item.answer,
           explanation: item.explanation,
-          categoryId: defaultCatId,
-          subcategoryId: "",
+          categoryId: targetCatId,
+          subcategoryId: targetSubCatId,
           difficulty,
           marks: 1,
           negativeMarks: 0,
@@ -402,8 +439,8 @@ No markdown, no code fences, no explanation.`;
           text: item.text,
           answer: item.answer,
           explanation: item.explanation,
-          categoryId: defaultCatId,
-          subcategoryId: "",
+          categoryId: targetCatId,
+          subcategoryId: targetSubCatId,
           difficulty,
           marks: 1,
           negativeMarks: 0.5,
@@ -438,8 +475,8 @@ No markdown, no code fences, no explanation.`;
           matchRight: item.matchRight,
           answer: item.answer,
           explanation: item.explanation,
-          categoryId: defaultCatId,
-          subcategoryId: "",
+          categoryId: targetCatId,
+          subcategoryId: targetSubCatId,
           difficulty,
           marks: 2,
           negativeMarks: 0,
@@ -475,8 +512,8 @@ No markdown, no code fences, no explanation.`;
           codingTests: item.codingTests,
           answer: "template",
           explanation: item.explanation,
-          categoryId: defaultCatId,
-          subcategoryId: "",
+          categoryId: targetCatId,
+          subcategoryId: targetSubCatId,
           difficulty,
           marks: 5,
           negativeMarks: 0,

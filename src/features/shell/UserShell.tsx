@@ -43,7 +43,9 @@ export function UserShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex h-full w-full overflow-hidden">
-      <aside className={`hidden flex-col border-r bg-card md:flex h-full shrink-0 transition-all duration-200 ${isCollapsed ? "w-12" : "w-60"}`}>
+      <aside
+        className={`hidden flex-col border-r bg-card md:flex h-full shrink-0 transition-all duration-200 ${isCollapsed ? "w-12" : "w-60"}`}
+      >
         <div className="flex h-11 items-center justify-between border-b px-2 font-semibold shrink-0 text-sm">
           {!isCollapsed && (
             <div className="flex items-center gap-2 truncate pl-1">
@@ -51,9 +53,7 @@ export function UserShell({ children }: { children: ReactNode }) {
               <span className="truncate">electricwisers</span>
             </div>
           )}
-          {isCollapsed && (
-            <div className="h-5 w-5 rounded bg-primary mx-auto" />
-          )}
+          {isCollapsed && <div className="h-5 w-5 rounded bg-primary mx-auto" />}
           {!isCollapsed && (
             <button
               onClick={toggleSidebar}
@@ -110,7 +110,9 @@ export function UserShell({ children }: { children: ReactNode }) {
             </Link>
           )}
         </nav>
-        <div className={`border-t p-2 shrink-0 space-y-1.5 ${isCollapsed ? "flex flex-col items-center" : ""}`}>
+        <div
+          className={`border-t p-2 shrink-0 space-y-1.5 ${isCollapsed ? "flex flex-col items-center" : ""}`}
+        >
           {isCollapsed ? (
             <Button
               variant="outline"

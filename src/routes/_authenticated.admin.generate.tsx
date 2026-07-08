@@ -26,11 +26,8 @@ import {
   FileQuestion,
   AlertCircle,
 } from "lucide-react";
-// We will modify rag.functions.ts to export generateAiQuestions server function
 import { generateAiQuestions } from "@/lib/rag.functions";
 import { z } from "zod";
-import { Checkbox } from "@/components/ui/checkbox";
-
 
 const searchSchema = z.object({
   docId: z.string().optional(),
@@ -49,7 +46,6 @@ type SyllabusNode = {
   parentId: string | null;
   order: number;
 };
-
 
 type JobItem = {
   status: "queued" | "running" | "done" | "failed";
@@ -447,12 +443,16 @@ function AIQuizGenerator() {
                             {childTopics.map(([topicId, topicNode]) => {
                               const checked = selectedNodeIds.includes(topicId);
                               return (
-                                <div key={topicId} className="flex items-start gap-2.5 text-xs text-foreground hover:bg-muted/30 p-1 rounded transition-colors">
-                                  <Checkbox
+                                <div
+                                  key={topicId}
+                                  className="flex items-start gap-2.5 text-xs text-foreground hover:bg-muted/30 p-1 rounded transition-colors"
+                                >
+                                  <input
+                                    type="checkbox"
                                     checked={checked}
-                                    onCheckedChange={(val: boolean | "indeterminate") => handleSelectNode(topicId, !!val)}
+                                    onChange={(e) => handleSelectNode(topicId, e.target.checked)}
                                     id={`node-chk-${topicId}`}
-                                    className="mt-0.5"
+                                    className="h-4 w-4 shrink-0 rounded-sm border border-primary shadow cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 accent-primary mt-0.5"
                                   />
                                   <Label
                                     htmlFor={`node-chk-${topicId}`}

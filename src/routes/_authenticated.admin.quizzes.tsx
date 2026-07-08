@@ -15,8 +15,13 @@ import {
   Check,
   X,
   FileQuestion,
+  Share2,
+  Copy
 } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { getFirebaseDb } from "@/lib/firebase";
+import { uploadToCloudinary } from "@/lib/cloudinary";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,7 +37,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
 
 export const Route = createFileRoute("/_authenticated/admin/quizzes")({
   component: QuizzesAdmin,
@@ -55,6 +59,7 @@ type Quiz = {
   title: string;
   description: string;
   coverUrl?: string;
+  imageUrl?: string;
   categoryId: string;
   subcategoryId: string;
   durationSec: number;
@@ -84,6 +89,7 @@ function QuizzesAdmin() {
   const [showBuilder, setShowBuilder] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [coverUrl, setCoverUrl] = useState("");
   const [catId, setCatId] = useState("");
   const [subCatId, setSubCatId] = useState("");
   const [durationMin, setDurationMin] = useState(30);
@@ -93,6 +99,8 @@ function QuizzesAdmin() {
   const [shuffleOptions, setShuffleOptions] = useState(true);
   const [selectedQuestionIds, setSelectedQuestionIds] = useState<string[]>([]);
   const [status, setStatus] = useState<"draft" | "published">("published");
+  const [isUploading, setIsUploading] = useState(false);
+  const [shareQuizId, setShareQuizId] = useState<string | null>(null);
 
   // Filters / Search
   const [searchQuery, setSearchQuery] = useState("");
@@ -111,11 +119,26 @@ function QuizzesAdmin() {
     };
   }, []);
 
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploading(true);
+    try {
+      const url = await uploadToCloudinary(file);
+      setCoverUrl(url);
+      toast.success("Cover image uploaded");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Upload failed. You can manually paste a URL.");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   // Filter questions by selected Category & Subcategory to help user select relevant ones
   const filteredQuestionsForBuilder = Object.entries(questions).filter(([_, q]) => {
-    if (!catId) return false;
+    if (!catId || !q) return false;
     const matchesCat = q.categoryId === catId;
-    const matchesSub = !subCatId || q.subcategoryId === subCatId;
+    const matchesSub = !subCatId || subCatId === "_all" || q.subcategoryId === subCatId;
     return matchesCat && matchesSub;
   });
 
@@ -157,8 +180,9 @@ function QuizzesAdmin() {
       const quizData: Omit<Quiz, "id"> = {
         title: title.trim(),
         description: description.trim(),
+        coverUrl: coverUrl.trim() || undefined,
         categoryId: catId,
-        subcategoryId: subCatId,
+        subcategoryId: subCatId === "_all" ? "" : subCatId,
         durationSec: durationMin * 60,
         totalMarks: totalSelectedMarks,
         passingMarks: Number(passingMarks),
@@ -180,6 +204,7 @@ function QuizzesAdmin() {
       // Reset
       setTitle("");
       setDescription("");
+      setCoverUrl("");
       setCatId("");
       setSubCatId("");
       setDurationMin(30);
@@ -214,8 +239,12 @@ function QuizzesAdmin() {
     }
   };
 
-  const filteredQuizzes = Object.entries(quizzes).filter(([_, q]) =>
-    q.title.toLowerCase().includes(searchQuery.toLowerCase()),
+  const filteredQuizzes = Object.entries(quizzes).filter(
+    ([_, q]) =>
+      q &&
+      q.title &&
+      typeof q.title === "string" &&
+      q.title.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   return (
@@ -278,56 +307,95 @@ function QuizzesAdmin() {
                     />
                   </div>
 
+                  {/* Cover Image Upload */}
+                  <div className="grid gap-4 sm:grid-cols-2 items-end">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="qcover">Cover Image URL (Optional)</Label>
+                      <Input
+                        id="qcover"
+                        placeholder="Paste image url..."
+                        value={coverUrl}
+                        onChange={(e) => setCoverUrl(e.target.value)}
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Label
+                        htmlFor="cover-file"
+                        className="flex-1 flex items-center justify-center gap-1.5 h-10 border border-dashed rounded-md bg-muted/40 cursor-pointer text-xs hover:bg-muted/80 transition"
+                      >
+                        {isUploading ? "Uploading..." : "Upload Image"}
+                        <input
+                          id="cover-file"
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={handleImageUpload}
+                          disabled={isUploading}
+                        />
+                      </Label>
+                    </div>
+                  </div>
+                  {coverUrl && (
+                    <div className="relative h-28 w-28 border rounded-md overflow-hidden bg-muted">
+                      <img src={coverUrl} alt="Cover" className="h-full w-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => setCoverUrl("")}
+                        className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 hover:bg-red-600 transition"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
+
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-1.5">
                       <Label>Category</Label>
-                      <Select
+                      <select
                         value={catId}
-                        onValueChange={(val) => {
+                        onChange={(e) => {
+                          const val = e.target.value;
                           setCatId(val);
                           setSubCatId("");
-                          setSelectedQuestionIds([]);
                         }}
+                        className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
                       >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select Category" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {Object.entries(categories).map(([id, c]) => (
-                            <SelectItem key={id} value={id}>
+                        <option value="" disabled>
+                          Select Category
+                        </option>
+                        {Object.entries(categories)
+                          .filter(([_, c]) => !!c)
+                          .map(([id, c]) => (
+                            <option key={id} value={id}>
                               {c.name}
-                            </SelectItem>
+                            </option>
                           ))}
-                        </SelectContent>
-                      </Select>
+                      </select>
                     </div>
 
                     <div className="space-y-1.5">
                       <Label>Subcategory</Label>
-                      <Select
+                      <select
                         value={subCatId}
-                        onValueChange={(val) => {
+                        onChange={(e) => {
+                          const val = e.target.value;
                           setSubCatId(val);
-                          setSelectedQuestionIds([]);
                         }}
                         disabled={!catId}
+                        className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
                       >
-                        <SelectTrigger>
-                          <SelectValue
-                            placeholder={catId ? "Select Subcategory" : "Select category first"}
-                          />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="_all">All subcategories</SelectItem>
-                          {Object.entries(subcategories)
-                            .filter(([_, s]) => s.categoryId === catId)
-                            .map(([id, s]) => (
-                              <SelectItem key={id} value={id}>
-                                {s.name}
-                              </SelectItem>
-                            ))}
-                        </SelectContent>
-                      </Select>
+                        <option value="" disabled>
+                          {catId ? "Select Subcategory" : "Select category first"}
+                        </option>
+                        <option value="_all">All subcategories</option>
+                        {Object.entries(subcategories)
+                          .filter(([_, s]) => s && s.categoryId === catId)
+                          .map(([id, s]) => (
+                            <option key={id} value={id}>
+                              {s.name}
+                            </option>
+                          ))}
+                      </select>
                     </div>
                   </div>
 
@@ -389,32 +457,63 @@ function QuizzesAdmin() {
 
                   <div className="space-y-1.5">
                     <Label>Quiz Status</Label>
-                    <Select
+                    <select
                       value={status}
-                      onValueChange={(val: "draft" | "published") => setStatus(val)}
+                      onChange={(e) => setStatus(e.target.value as "draft" | "published")}
+                      className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
                     >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="published">Published (Visible to users)</SelectItem>
-                        <SelectItem value="draft">Draft (Hidden)</SelectItem>
-                      </SelectContent>
-                    </Select>
+                      <option value="published">Published (Visible to users)</option>
+                      <option value="draft">Draft (Hidden)</option>
+                    </select>
                   </div>
                 </div>
 
                 {/* Right Column: Question Checklist */}
                 <div className="flex flex-col border rounded-lg p-4 bg-background">
                   <div className="mb-4 pb-2 border-b">
-                    <h3 className="font-semibold text-sm">
-                      Select Questions ({selectedQuestionIds.length} chosen)
-                    </h3>
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-semibold text-sm">
+                        Select Questions ({selectedQuestionIds.length} chosen)
+                      </h3>
+                      {filteredQuestionsForBuilder.length > 0 && (
+                        <div className="flex items-center gap-1.5 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            id="select-all-filtered"
+                            checked={filteredQuestionsForBuilder.every(([qid]) => selectedQuestionIds.includes(qid))}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              if (checked) {
+                                const filteredIds = filteredQuestionsForBuilder.map(([qid]) => qid);
+                                const newSelection = new Set([...selectedQuestionIds, ...filteredIds]);
+                                setSelectedQuestionIds(Array.from(newSelection));
+                              } else {
+                                const filteredIds = filteredQuestionsForBuilder.map(([qid]) => qid);
+                                setSelectedQuestionIds(selectedQuestionIds.filter(id => !filteredIds.includes(id)));
+                              }
+                            }}
+                            className="h-3.5 w-3.5 shrink-0 rounded-sm border border-primary shadow cursor-pointer accent-primary"
+                          />
+                          <Label htmlFor="select-all-filtered" className="text-xs font-medium cursor-pointer">
+                            Select All
+                          </Label>
+                        </div>
+                      )}
+                    </div>
                     <p className="text-xs text-muted-foreground mt-0.5">
                       Showing questions under category:{" "}
                       <span className="font-medium text-foreground">
                         {categories[catId]?.name ?? "None Selected"}
                       </span>
+                      {subCatId && subCatId !== "_all" && subcategories[subCatId] && (
+                        <>
+                          {" "}
+                          · Subcategory:{" "}
+                          <span className="font-medium text-foreground">
+                            {subcategories[subCatId].name}
+                          </span>
+                        </>
+                      )}
                     </p>
                   </div>
 
@@ -437,7 +536,14 @@ function QuizzesAdmin() {
                               checked ? "border-primary bg-primary/5" : "hover:bg-muted/30"
                             }`}
                           >
-                            <Checkbox checked={checked} id={`chk-${qid}`} className="mt-0.5" />
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              id={`chk-${qid}`}
+                              onChange={() => toggleQuestionSelection(qid)}
+                              onClick={(e) => e.stopPropagation()}
+                              className="h-4 w-4 shrink-0 rounded-sm border border-primary shadow cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 accent-primary mt-0.5"
+                            />
                             <div className="flex-1 space-y-1">
                               <p className="font-medium text-foreground line-clamp-2">{q.text}</p>
                               <div className="flex items-center gap-1.5">
@@ -519,13 +625,19 @@ function QuizzesAdmin() {
                       <Button
                         size="icon"
                         variant="ghost"
+                        onClick={() => setShareQuizId(qid)}
+                        title="Share Quiz"
+                      >
+                        <Share2 className="h-4 w-4 text-indigo-500 hover:text-indigo-600" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
                         onClick={() => toggleStatus(qid, q.status)}
                         title={q.status === "published" ? "Set to draft" : "Publish"}
                       >
                         {q.status === "published" ? (
-                          <X
-                            className="h-4 w-4 text-muted-foreground hover:text-foreground"
-                          />
+                          <X className="h-4 w-4 text-muted-foreground hover:text-foreground" />
                         ) : (
                           <Check className="h-4 w-4 text-emerald-600" />
                         )}
@@ -570,6 +682,44 @@ function QuizzesAdmin() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Share Quiz Dialog */}
+      <Dialog open={!!shareQuizId} onOpenChange={(open) => !open && setShareQuizId(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Share Quiz</DialogTitle>
+            <DialogDescription>
+              Anyone with this link or QR code can instantly start the quiz.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col items-center justify-center space-y-6 py-4">
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+              <QRCodeSVG 
+                value={shareQuizId ? `${window.location.origin}/quizzes/${shareQuizId}` : ""} 
+                size={200} 
+                level="H" 
+                includeMargin={false}
+              />
+            </div>
+            <div className="flex w-full items-center space-x-2">
+              <Input
+                readOnly
+                value={shareQuizId ? `${window.location.origin}/quizzes/${shareQuizId}` : ""}
+                className="text-xs font-mono"
+              />
+              <Button
+                size="icon"
+                onClick={() => {
+                  navigator.clipboard.writeText(`${window.location.origin}/quizzes/${shareQuizId}`);
+                  toast.success("Link copied to clipboard");
+                }}
+              >
+                <Copy className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

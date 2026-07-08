@@ -1,10 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import {
-  Outlet,
-  Link,
-  createRootRouteWithContext,
-  useRouter,
-} from "@tanstack/react-router";
+import { Outlet, Link, createRootRouteWithContext, useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
 
 import { reportLovableError } from "../lib/lovable-error-reporting";
@@ -41,14 +36,22 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   }, [error]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="max-w-md text-center">
+    <div className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
+      <div className="max-w-2xl w-full text-center">
         <h1 className="text-xl font-semibold tracking-tight text-foreground">
           This page didn't load
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Something went wrong on our end. You can try refreshing or head back home.
         </p>
+        <div className="mt-4 p-4 text-left bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400 rounded-md overflow-auto max-h-60 text-xs font-mono border border-red-100 dark:border-red-950">
+          <p className="font-bold">
+            {error?.name || "Error"}: {error?.message || "Unknown error"}
+          </p>
+          {error?.stack && (
+            <pre className="mt-2 whitespace-pre-wrap text-[10px] opacity-80">{error.stack}</pre>
+          )}
+        </div>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
             onClick={() => {

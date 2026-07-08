@@ -39,9 +39,8 @@ type DocumentItem = {
   categoryId?: string;
   subcategoryId?: string;
   extractedText?: string; // temp field stored before server fn processes it
-  lastError?: string;     // set by server fn on failure for debugging
+  lastError?: string; // set by server fn on failure for debugging
 };
-
 
 function DocumentsAdmin() {
   const { user } = useAuth();
@@ -61,7 +60,9 @@ function DocumentsAdmin() {
 
   // Categories & Subcategories state
   const [categories, setCategories] = useState<Record<string, { name: string }>>({});
-  const [subcategories, setSubcategories] = useState<Record<string, { categoryId: string; name: string }>>({});
+  const [subcategories, setSubcategories] = useState<
+    Record<string, { categoryId: string; name: string }>
+  >({});
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
   const [selectedSubcategoryId, setSelectedSubcategoryId] = useState("");
 
@@ -83,7 +84,6 @@ function DocumentsAdmin() {
       unsubSubs();
     };
   }, []);
-
 
   const handleUpload = async (file: File) => {
     if (file.type !== "application/pdf") {
@@ -167,7 +167,9 @@ ${extractedData.fullText.slice(0, 30000)}`
         throw new Error("Pasted JSON is missing the 'nodes' object.");
       }
 
-      const fileName = selectedFileName || `${subcategories[selectedSubcategoryId]?.name || "Manual"}_Syllabus.pdf`;
+      const fileName =
+        selectedFileName ||
+        `${subcategories[selectedSubcategoryId]?.name || "Manual"}_Syllabus.pdf`;
       let cloudinaryUrl = `https://mock-supabase.example.com/${fileName}`;
       let supabaseUrl = `https://mock-supabase.example.com/${fileName}`;
 
@@ -303,7 +305,9 @@ ${extractedData.fullText.slice(0, 30000)}`
     }
   };
 
-  const docList = Object.entries(documents).sort((a, b) => b[1].createdAt - a[1].createdAt);
+  const docList = Object.entries(documents)
+    .filter(([_, doc]) => !!doc)
+    .sort((a, b) => b[1].createdAt - a[1].createdAt);
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-6">
@@ -319,7 +323,9 @@ ${extractedData.fullText.slice(0, 30000)}`
         <Card className="md:col-span-1 border-primary/20 shadow-sm self-start">
           <CardHeader>
             <CardTitle className="text-base font-semibold">Upload Document</CardTitle>
-            <CardDescription>Select category, then upload a PDF file to begin ingestion.</CardDescription>
+            <CardDescription>
+              Select category, then upload a PDF file to begin ingestion.
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {/* Category Selector */}
@@ -336,11 +342,13 @@ ${extractedData.fullText.slice(0, 30000)}`
                   <SelectValue placeholder="Choose Category..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {Object.entries(categories).map(([id, cat]) => (
-                    <SelectItem key={id} value={id}>
-                      {cat.name}
-                    </SelectItem>
-                  ))}
+                  {Object.entries(categories)
+                    .filter(([_, cat]) => !!cat)
+                    .map(([id, cat]) => (
+                      <SelectItem key={id} value={id}>
+                        {cat.name}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
@@ -358,7 +366,7 @@ ${extractedData.fullText.slice(0, 30000)}`
                 </SelectTrigger>
                 <SelectContent>
                   {Object.entries(subcategories)
-                    .filter(([_, sub]) => sub.categoryId === selectedCategoryId)
+                    .filter(([_, sub]) => sub && sub.categoryId === selectedCategoryId)
                     .map(([id, sub]) => (
                       <SelectItem key={id} value={id}>
                         {sub.name}
@@ -420,7 +428,8 @@ ${extractedData.fullText.slice(0, 30000)}`
               <div className="space-y-1.5">
                 <Label>Step 1: Copy AI Prompt</Label>
                 <p className="text-[10px] text-muted-foreground leading-normal">
-                  This prompt contains instructions and formatting rules for your external AI tools (Claude, ChatGPT, Gemini, etc.).
+                  This prompt contains instructions and formatting rules for your external AI tools
+                  (Claude, ChatGPT, Gemini, etc.).
                 </p>
                 <Button
                   type="button"
@@ -522,7 +531,10 @@ ${extractedData.fullText.slice(0, 30000)}`
                         {doc.categoryId && categories[doc.categoryId] && (
                           <>
                             <span>·</span>
-                            <Badge variant="outline" className="bg-accent/40 text-accent-foreground border-accent/25 text-[10px] py-0 px-1.5 font-normal">
+                            <Badge
+                              variant="outline"
+                              className="bg-accent/40 text-accent-foreground border-accent/25 text-[10px] py-0 px-1.5 font-normal"
+                            >
                               {categories[doc.categoryId].name}
                             </Badge>
                           </>
@@ -530,7 +542,10 @@ ${extractedData.fullText.slice(0, 30000)}`
                         {doc.subcategoryId && subcategories[doc.subcategoryId] && (
                           <>
                             <span>·</span>
-                            <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 text-[10px] py-0 px-1.5 font-normal">
+                            <Badge
+                              variant="outline"
+                              className="bg-primary/5 text-primary border-primary/20 text-[10px] py-0 px-1.5 font-normal"
+                            >
                               {subcategories[doc.subcategoryId].name}
                             </Badge>
                           </>

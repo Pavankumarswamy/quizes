@@ -339,10 +339,19 @@ function SyllabusTreeEditor() {
               className="h-8 text-xs"
               onKeyDown={(e) => e.key === "Enter" && handleAddChild(nodeId)}
             />
-            <Button size="sm" onClick={() => handleAddChild(nodeId)} className="h-8 py-1 px-3 text-xs">
+            <Button
+              size="sm"
+              onClick={() => handleAddChild(nodeId)}
+              className="h-8 py-1 px-3 text-xs"
+            >
               Add
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => setAddingChildToId(null)} className="h-8 py-1 px-3 text-xs">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setAddingChildToId(null)}
+              className="h-8 py-1 px-3 text-xs"
+            >
               Cancel
             </Button>
           </div>

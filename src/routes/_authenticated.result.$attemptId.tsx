@@ -194,7 +194,7 @@ function QuizResult() {
   };
 
   return (
-    <div className="mx-auto max-w-4xl p-6 space-y-8">
+    <div className="mx-auto max-w-7xl p-6 space-y-8">
       {/* Header Actions */}
       <div className="flex justify-between items-center">
         <Button asChild variant="ghost" size="sm" className="-ml-2 text-muted-foreground">
@@ -466,7 +466,9 @@ function QuizResult() {
                             <span className="text-muted-foreground block mb-0.5">
                               Expected Answer:
                             </span>
-                            <span className="font-bold text-emerald-700 text-sm">{String(q.answer)}</span>
+                            <span className="font-bold text-emerald-700 text-sm">
+                              {String(q.answer)}
+                            </span>
                           </div>
                         )}
                       </div>

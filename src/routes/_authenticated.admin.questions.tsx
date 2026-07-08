@@ -483,7 +483,11 @@ function QuestionsAdmin() {
 
   const applyFilters = (rawQuestions: [string, Question][]) => {
     return rawQuestions.filter(([_, q]) => {
-      const matchesSearch = q.text.toLowerCase().includes(searchQuery.toLowerCase());
+      if (!q) return false;
+      const matchesSearch =
+        q.text && typeof q.text === "string"
+          ? q.text.toLowerCase().includes(searchQuery.toLowerCase())
+          : false;
       const matchesCat = filterCat === "all" || q.categoryId === filterCat;
       const matchesSub = filterSub === "all" || q.subcategoryId === filterSub;
       const matchesDiff = filterDiff === "all" || q.difficulty === filterDiff;
@@ -496,11 +500,13 @@ function QuestionsAdmin() {
 
   // Split Active Bank questions vs AI Draft Review Queue questions
   const activeQuestions = applyFilters(
-    allQuestionsArray.filter(([_, q]) => q.status === "published" || q.status === "approved"),
+    allQuestionsArray.filter(
+      ([_, q]) => q && (q.status === "published" || q.status === "approved"),
+    ),
   );
 
   const draftQuestions = applyFilters(
-    allQuestionsArray.filter(([_, q]) => q.source === "ai" && q.status === "draft"),
+    allQuestionsArray.filter(([_, q]) => q && q.source === "ai" && q.status === "draft"),
   );
 
   return (
@@ -581,11 +587,13 @@ function QuestionsAdmin() {
                       <SelectValue placeholder="Select Category" />
                     </SelectTrigger>
                     <SelectContent>
-                      {Object.entries(categories).map(([id, c]) => (
-                        <SelectItem key={id} value={id}>
-                          {c.name}
-                        </SelectItem>
-                      ))}
+                      {Object.entries(categories)
+                        .filter(([_, c]) => !!c)
+                        .map(([id, c]) => (
+                          <SelectItem key={id} value={id}>
+                            {c.name}
+                          </SelectItem>
+                        ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -600,7 +608,7 @@ function QuestionsAdmin() {
                     </SelectTrigger>
                     <SelectContent>
                       {Object.entries(subcategories)
-                        .filter(([_, s]) => s.categoryId === catId)
+                        .filter(([_, s]) => s && s.categoryId === catId)
                         .map(([id, s]) => (
                           <SelectItem key={id} value={id}>
                             {s.name}

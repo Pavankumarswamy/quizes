@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { submitAndGradeAttempt } from "@/lib/quiz.functions";
+import { FaceDetector, FilesetResolver } from "@mediapipe/tasks-vision";
 import {
   Clock,
   ChevronLeft,
@@ -50,6 +51,8 @@ type Question = {
   type: "mcq" | "multi" | "fill" | "match" | "tf" | "coding";
   text: string;
   imageUrl?: string;
+  categoryId?: string;
+  subcategoryId?: string;
   options?: QuestionOption[];
   answer: unknown;
   marks: number;
@@ -92,6 +95,8 @@ function AttemptEngine() {
   const [quiz, setQuiz] = useState<Quiz | null>(null);
   const [questions, setQuestions] = useState<Record<string, Question>>({});
   const [answers, setAnswers] = useState<Record<string, UserAnswer>>({});
+  const [categories, setCategories] = useState<Record<string, { name: string }>>({});
+  const [subcategories, setSubcategories] = useState<Record<string, { name: string }>>({});
 
   // Navigation & Selection
   const [orderedQuestionIds, setOrderedQuestionIds] = useState<string[]>([]);
@@ -110,6 +115,12 @@ function AttemptEngine() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const submitPromiseRef = useRef<boolean>(false);
+
+  // Anti-Cheat State
+  const [cheatingStrikes, setCheatingStrikes] = useState(0);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const faceDetectorRef = useRef<FaceDetector | null>(null);
+  const [cameraPermission, setCameraPermission] = useState<"pending" | "granted" | "denied">("pending");
 
   useEffect(() => {
     if (!user) return;
@@ -137,6 +148,10 @@ function AttemptEngine() {
         const qz = quizSnap.val() as Quiz;
         setQuiz(qz);
 
+        // Fetch meta data
+        get(ref(db, "categories")).then((snap) => { if (snap.exists()) setCategories(snap.val()); });
+        get(ref(db, "subcategories")).then((snap) => { if (snap.exists()) setSubcategories(snap.val()); });
+
         const qBankSnap = await get(ref(db, "questionBank"));
         const qBank = (qBankSnap.val() as Record<string, Question>) ?? {};
         setQuestions(qBank);
@@ -163,6 +178,146 @@ function AttemptEngine() {
       unsubAnswers();
     };
   }, [attemptId, user]);
+
+  // Anti-Cheat Logic: Window blur & Tab Visibility
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        setCheatingStrikes((prev) => {
+          const next = prev + 1;
+          toast.error(`Warning: Tab switching detected! Strike ${next}/10`);
+          return next;
+        });
+      }
+    };
+    
+    const handleBlur = () => {
+      setCheatingStrikes((prev) => {
+        const next = prev + 1;
+        toast.error(`Warning: Window focus lost! Strike ${next}/10`);
+        return next;
+      });
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("blur", handleBlur);
+
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      toast.error("Right-click is disabled.");
+      setCheatingStrikes((s) => s + 1);
+    };
+    const handleCopyPaste = (e: ClipboardEvent) => {
+      e.preventDefault();
+      toast.error("Copy/Paste is disabled.");
+      setCheatingStrikes((s) => s + 1);
+    };
+
+    document.addEventListener("contextmenu", handleContextMenu);
+    document.addEventListener("copy", handleCopyPaste);
+    document.addEventListener("paste", handleCopyPaste);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("blur", handleBlur);
+      document.removeEventListener("contextmenu", handleContextMenu);
+      document.removeEventListener("copy", handleCopyPaste);
+      document.removeEventListener("paste", handleCopyPaste);
+    };
+  }, []);
+
+  // Keyboard navigation (Enter -> Save & Next)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Enter" && !showSubmitConfirm) {
+        document.getElementById("btn-save-next")?.click();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [showSubmitConfirm]);
+
+  // Google ML Kit Face Detection
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout;
+    
+    async function initFaceDetection() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+
+        const vision = await FilesetResolver.forVisionTasks(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
+        );
+        const detector = await FaceDetector.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
+            delegate: "CPU"
+          },
+          runningMode: "VIDEO"
+        });
+        faceDetectorRef.current = detector;
+
+        intervalId = setInterval(() => {
+          if (videoRef.current && faceDetectorRef.current && videoRef.current.readyState >= 2) {
+            const detections = faceDetectorRef.current.detectForVideo(videoRef.current, performance.now());
+            if (detections.detections.length === 0) {
+              setCheatingStrikes((prev) => {
+                const next = prev + 1;
+                toast.error(`Warning: No face detected! Look at the screen. Strike ${next}/10`);
+                return next;
+              });
+            } else if (detections.detections.length > 1) {
+              setCheatingStrikes((prev) => {
+                const next = prev + 1;
+                toast.error(`Warning: Multiple faces detected! Strike ${next}/10`);
+                return next;
+              });
+            } else {
+              // Strict Head Rotation Check
+              const keypoints = detections.detections[0].keypoints;
+              if (keypoints && keypoints.length >= 3) {
+                const rightEye = keypoints[0];
+                const leftEye = keypoints[1];
+                const nose = keypoints[2];
+                
+                const minEyeX = Math.min(rightEye.x, leftEye.x);
+                const maxEyeX = Math.max(rightEye.x, leftEye.x);
+                const eyeDistX = maxEyeX - minEyeX;
+
+                // If eyes are too close horizontally (profile view) or nose is outside the eyes bounds (head turned)
+                const isRotated = eyeDistX < 0.02 || nose.x < minEyeX - 0.03 || nose.x > maxEyeX + 0.03;
+
+                if (isRotated) {
+                  setCheatingStrikes((prev) => {
+                    const next = prev + 1;
+                    toast.error(`Warning: Face rotation detected! Keep your eyes on the screen. Strike ${next}/10`);
+                    return next;
+                  });
+                }
+              }
+            }
+          }
+        }, 1000);
+      } catch (err) {
+        console.warn("Camera/Face Detection Error:", err);
+      }
+    }
+
+    if (attempt && attempt.status !== "submitted" && cameraPermission === "granted") {
+      initFaceDetection();
+    }
+
+    return () => {
+      clearInterval(intervalId);
+      if (videoRef.current?.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, [attempt, cameraPermission]);
 
   // Countdown timer
   useEffect(() => {
@@ -321,6 +476,14 @@ function AttemptEngine() {
     }
   };
 
+  // Cheating auto-submit
+  useEffect(() => {
+    if (cheatingStrikes >= 10 && !submitPromiseRef.current) {
+      toast.error("Maximum cheating strikes reached. Auto-submitting exam.");
+      handleAutoSubmit();
+    }
+  }, [cheatingStrikes]);
+
   const handleAutoSubmit = async () => {
     setIsSubmitting(true);
     submitPromiseRef.current = true;
@@ -362,7 +525,54 @@ function AttemptEngine() {
   };
 
   return (
-    <div className="flex flex-col h-screen w-full bg-muted/10">
+    <div 
+      className="flex flex-col h-[80vh] w-full bg-muted/10 select-none relative"
+      onCopy={(e) => { e.preventDefault(); toast.error("Copying is disabled."); setCheatingStrikes(s => s + 1); }}
+      onPaste={(e) => { e.preventDefault(); toast.error("Pasting is disabled."); setCheatingStrikes(s => s + 1); }}
+      onContextMenu={(e) => { e.preventDefault(); toast.error("Right-click is disabled."); setCheatingStrikes(s => s + 1); }}
+    >
+      {/* Camera Preview */}
+      {cameraPermission === "granted" && attempt?.status !== "submitted" && (
+        <video 
+          ref={videoRef} 
+          autoPlay 
+          playsInline 
+          muted 
+          className="fixed bottom-6 left-6 w-40 h-32 object-cover rounded-xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.5)] z-50 border-[3px] border-emerald-500 bg-black/50 transition-all hover:scale-105" 
+        />
+      )}
+
+      {/* Camera Permission Dialog */}
+      <Dialog open={cameraPermission === "pending"} onOpenChange={() => {}}>
+        <DialogContent className="max-w-md [&>button]:hidden">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-indigo-500" /> Enable AI Anti-Cheat?
+            </DialogTitle>
+            <DialogDescription className="pt-2 text-sm text-foreground/80 leading-relaxed">
+              This exam supports AI facial recognition to ensure academic integrity. If you opt-in, your webcam will be used <strong>strictly locally</strong> on your device to monitor for irregular activity (like walking away or having multiple people in frame). 
+              <br /><br />
+              This is an <strong>optional</strong> feature. Would you like to enable camera monitoring?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-6 flex flex-col sm:flex-row gap-3 sm:justify-between">
+            <Button variant="outline" onClick={() => setCameraPermission("denied")} className="w-full sm:w-auto">
+              No, skip for now
+            </Button>
+            <Button onClick={() => setCameraPermission("granted")} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-600/90 text-white border-transparent shadow-md">
+              Yes, enable camera
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Cheating Strikes Indicator */}
+      {cheatingStrikes > 0 && (
+        <div className="absolute top-16 left-6 z-50 px-3 py-1.5 bg-red-500 text-white font-bold rounded-full text-xs animate-pulse shadow-lg flex items-center gap-1.5">
+          <AlertCircle className="h-4 w-4" /> {cheatingStrikes}/10 Strikes
+        </div>
+      )}
+
       {/* Top Header */}
       <header className="flex h-14 shrink-0 items-center justify-between border-b bg-card px-6 shadow-sm z-10">
         <div className="flex flex-col">
@@ -391,9 +601,10 @@ function AttemptEngine() {
       {/* Workspace Panel layout */}
       <div className="flex flex-1 overflow-hidden">
         {/* Center: Question Canvas */}
-        <main className="flex-1 overflow-y-auto p-6 flex flex-col justify-between">
+        <div className="flex-1 flex flex-col bg-card relative overflow-hidden">
+          <main className="flex-1 overflow-y-auto p-6 lg:p-10">
           {currentQuestion ? (
-            <div className="max-w-3xl mx-auto w-full space-y-6">
+            <div className="max-w-5xl mx-auto w-full space-y-8">
               {/* Question Header Info */}
               <div className="flex justify-between items-center pb-2 border-b">
                 <span className="text-sm font-semibold text-muted-foreground">
@@ -435,7 +646,7 @@ function AttemptEngine() {
               )}
 
               {/* Question text */}
-              <div className="text-base md:text-lg font-medium text-foreground select-none">
+              <div className="text-xl md:text-2xl lg:text-3xl font-semibold text-foreground select-none leading-relaxed">
                 {currentQuestion.text}
               </div>
 
@@ -443,21 +654,21 @@ function AttemptEngine() {
               <div className="mt-6">
                 {/* MCQ (Single Choice) */}
                 {currentQuestion.type === "mcq" && (
-                  <div className="space-y-3">
+                  <div className="space-y-4">
                     {currentQuestion.options?.map((opt) => {
                       const selected = selectedAnswer === opt.id;
                       return (
                         <button
                           key={opt.id}
                           onClick={() => setSelectedAnswer(opt.id)}
-                          className={`w-full text-left flex items-center gap-3.5 rounded-xl border p-4 text-sm transition ${
+                          className={`w-full text-left flex items-center gap-4 rounded-2xl border p-5 md:p-6 text-base md:text-lg transition ${
                             selected
-                              ? "border-primary bg-primary/5 shadow-sm font-semibold ring-1 ring-primary"
+                              ? "border-primary bg-primary/5 shadow-md font-semibold ring-2 ring-primary"
                               : "bg-card hover:bg-muted/40"
                           }`}
                         >
                           <span
-                            className={`h-6 w-6 flex shrink-0 items-center justify-center rounded-full border text-[11px] font-bold uppercase transition ${
+                            className={`h-8 w-8 md:h-10 md:w-10 flex shrink-0 items-center justify-center rounded-full border text-sm font-bold uppercase transition ${
                               selected
                                 ? "bg-primary text-primary-foreground border-transparent"
                                 : "bg-muted text-muted-foreground"
@@ -465,7 +676,7 @@ function AttemptEngine() {
                           >
                             {opt.id}
                           </span>
-                          <span className="flex-1 text-foreground">{opt.text}</span>
+                          <span className="flex-1 text-foreground leading-relaxed">{opt.text}</span>
                         </button>
                       );
                     })}
@@ -474,7 +685,7 @@ function AttemptEngine() {
 
                 {/* Multi Select (Multiple Choice) */}
                 {currentQuestion.type === "multi" && (
-                  <div className="space-y-3">
+                  <div className="space-y-4">
                     {currentQuestion.options?.map((opt) => {
                       const selectedList = Array.isArray(selectedAnswer) ? selectedAnswer : [];
                       const selected = selectedList.includes(opt.id);
@@ -491,14 +702,14 @@ function AttemptEngine() {
                         <button
                           key={opt.id}
                           onClick={toggleSelect}
-                          className={`w-full text-left flex items-center gap-3.5 rounded-xl border p-4 text-sm transition ${
+                          className={`w-full text-left flex items-center gap-4 rounded-2xl border p-5 md:p-6 text-base md:text-lg transition ${
                             selected
-                              ? "border-primary bg-primary/5 shadow-sm font-semibold ring-1 ring-primary"
+                              ? "border-primary bg-primary/5 shadow-md font-semibold ring-2 ring-primary"
                               : "bg-card hover:bg-muted/40"
                           }`}
                         >
                           <span
-                            className={`h-6 w-6 flex shrink-0 items-center justify-center rounded-md border text-[11px] font-bold uppercase transition ${
+                            className={`h-8 w-8 md:h-10 md:w-10 flex shrink-0 items-center justify-center rounded-lg border text-sm font-bold uppercase transition ${
                               selected
                                 ? "bg-primary text-primary-foreground border-transparent"
                                 : "bg-muted border-muted-foreground"
@@ -506,7 +717,7 @@ function AttemptEngine() {
                           >
                             {selected ? "✓" : opt.id}
                           </span>
-                          <span className="flex-1 text-foreground">{opt.text}</span>
+                          <span className="flex-1 text-foreground leading-relaxed">{opt.text}</span>
                         </button>
                       );
                     })}
@@ -647,8 +858,10 @@ function AttemptEngine() {
             </div>
           )}
 
+          </main>
+
           {/* Footer Actions Panel */}
-          <div className="border-t pt-6 mt-12 bg-background/50 backdrop-blur-sm sticky bottom-0 z-10">
+          <div className="border-t py-4 px-6 bg-background z-10 shrink-0">
             <div className="max-w-3xl mx-auto flex items-center justify-between gap-2">
               <div className="flex gap-2">
                 <Button
@@ -673,13 +886,13 @@ function AttemptEngine() {
                 >
                   <Bookmark className="mr-1 h-4 w-4" /> Mark for Review
                 </Button>
-                <Button size="sm" onClick={handleSaveAndNext}>
+                <Button id="btn-save-next" size="sm" onClick={handleSaveAndNext}>
                   Save & Next <ChevronRight className="ml-1 h-4 w-4" />
                 </Button>
               </div>
             </div>
           </div>
-        </main>
+        </div>
 
         {/* Right Sidebar: Palette Grid */}
         <aside className="w-64 border-l bg-card flex flex-col shrink-0 z-10">
@@ -711,51 +924,83 @@ function AttemptEngine() {
           </div>
 
           {/* Numbers list */}
-          <div className="flex-1 overflow-y-auto p-4">
-            <div className="grid grid-cols-4 gap-2">
-              {orderedQuestionIds.map((qid, idx) => {
-                const ansState = answers[qid];
-                const active = idx === currentIndex;
-
-                let colorClass = "border bg-background text-foreground hover:bg-muted/40";
-                if (ansState) {
-                  if (ansState.status === "answered") {
-                    colorClass =
-                      "bg-emerald-600 text-white border-transparent hover:bg-emerald-600/90";
-                  } else if (ansState.status === "marked") {
-                    colorClass =
-                      "bg-indigo-600 text-white border-transparent hover:bg-indigo-600/90";
-                  } else if (ansState.status === "answered_marked") {
-                    colorClass =
-                      "bg-indigo-600 text-white border-transparent hover:bg-indigo-600/90 relative after:content-[''] after:absolute after:bottom-1 after:right-1 after:h-1.5 after:w-1.5 after:rounded-full after:bg-emerald-400";
-                  } else if (ansState.status === "visited") {
-                    colorClass = "bg-red-500 text-white border-transparent hover:bg-red-500/90";
-                  }
+          <div className="flex-1 overflow-y-auto p-4 space-y-6">
+            {Array.from(() => {
+              const groups: { name: string; questions: { qid: string; idx: number }[] }[] = [];
+              const groupMap = new Map<string, { qid: string; idx: number }[]>();
+              
+              orderedQuestionIds.forEach((qid, idx) => {
+                const q = questions[qid];
+                let groupName = "General";
+                if (q) {
+                  const catName = q.categoryId ? categories[q.categoryId]?.name : null;
+                  const subName = q.subcategoryId ? subcategories[q.subcategoryId]?.name : null;
+                  if (catName && subName) groupName = `${catName} › ${subName}`;
+                  else if (catName) groupName = catName;
+                  else if (subName) groupName = subName;
                 }
+                if (!groupMap.has(groupName)) groupMap.set(groupName, []);
+                groupMap.get(groupName)!.push({ qid, idx });
+              });
 
-                return (
-                  <button
-                    key={qid}
-                    onClick={async () => {
-                      const currentQid = orderedQuestionIds[currentIndex];
-                      const currentQ = questions[currentQid];
-                      const hasAnswer = !isAnswerEmpty(selectedAnswer, currentQ.type);
-                      await updateAnswerStatus(
-                        currentQid,
-                        selectedAnswer,
-                        hasAnswer ? "answered" : "visited",
-                      );
-                      setCurrentIndex(idx);
-                    }}
-                    className={`h-9 w-full flex items-center justify-center rounded-lg text-xs font-bold transition select-none ${colorClass} ${
-                      active ? "ring-2 ring-primary ring-offset-2" : ""
-                    }`}
-                  >
-                    {idx + 1}
-                  </button>
-                );
-              })}
-            </div>
+              groupMap.forEach((questions, name) => groups.push({ name, questions }));
+              groups.sort((a, b) => {
+                if (a.name === "General") return 1;
+                if (b.name === "General") return -1;
+                return a.name.localeCompare(b.name);
+              });
+              return groups;
+            })().map((group) => (
+              <div key={group.name} className="space-y-2">
+                <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider line-clamp-1" title={group.name}>
+                  {group.name}
+                </h4>
+                <div className="grid grid-cols-4 gap-2">
+                  {group.questions.map(({ qid, idx }) => {
+                    const ansState = answers[qid];
+                    const active = idx === currentIndex;
+
+                    let colorClass = "border bg-background text-foreground hover:bg-muted/40";
+                    if (ansState) {
+                      if (ansState.status === "answered") {
+                        colorClass =
+                          "bg-emerald-600 text-white border-transparent hover:bg-emerald-600/90";
+                      } else if (ansState.status === "marked") {
+                        colorClass =
+                          "bg-indigo-600 text-white border-transparent hover:bg-indigo-600/90";
+                      } else if (ansState.status === "answered_marked") {
+                        colorClass =
+                          "bg-indigo-600 text-white border-transparent hover:bg-indigo-600/90 relative after:content-[''] after:absolute after:bottom-1 after:right-1 after:h-1.5 after:w-1.5 after:rounded-full after:bg-emerald-400";
+                      } else if (ansState.status === "visited") {
+                        colorClass = "bg-red-500 text-white border-transparent hover:bg-red-500/90";
+                      }
+                    }
+
+                    return (
+                      <button
+                        key={qid}
+                        onClick={async () => {
+                          const currentQid = orderedQuestionIds[currentIndex];
+                          const currentQ = questions[currentQid];
+                          const hasAnswer = !isAnswerEmpty(selectedAnswer, currentQ.type);
+                          await updateAnswerStatus(
+                            currentQid,
+                            selectedAnswer,
+                            hasAnswer ? "answered" : "visited",
+                          );
+                          setCurrentIndex(idx);
+                        }}
+                        className={`h-9 w-full flex items-center justify-center rounded-lg text-xs font-bold transition select-none ${colorClass} ${
+                          active ? "ring-2 ring-primary ring-offset-2" : ""
+                        }`}
+                      >
+                        {idx + 1}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         </aside>
       </div>

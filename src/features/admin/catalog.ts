@@ -6,6 +6,7 @@ export type Category = {
   name: string;
   slug: string;
   order: number;
+  imageUrl?: string;
   createdAt?: number | object;
 };
 export type Subcategory = {
@@ -13,6 +14,7 @@ export type Subcategory = {
   categoryId: string;
   name: string;
   slug: string;
+  imageUrl?: string;
   order: number;
 };
 
@@ -24,13 +26,14 @@ export function slugify(v: string) {
     .replace(/^-+|-+$/g, "");
 }
 
-export async function createCategory(name: string) {
+export async function createCategory(name: string, imageUrl?: string) {
   const db = getFirebaseDb();
   const r = push(ref(db, "categories"));
   await set(r, {
     name: name.trim(),
     slug: slugify(name),
     order: Date.now(),
+    imageUrl: imageUrl || null,
     createdAt: serverTimestamp(),
   });
   return r.key!;
@@ -47,7 +50,7 @@ export async function deleteCategory(id: string) {
   // NOTE: subcategories referencing this categoryId should be cleaned up server-side later.
 }
 
-export async function createSubcategory(categoryId: string, name: string) {
+export async function createSubcategory(categoryId: string, name: string, imageUrl?: string) {
   const db = getFirebaseDb();
   const r = push(ref(db, "subcategories"));
   await set(r, {
@@ -55,6 +58,7 @@ export async function createSubcategory(categoryId: string, name: string) {
     name: name.trim(),
     slug: slugify(name),
     order: Date.now(),
+    imageUrl: imageUrl || null,
   });
   return r.key!;
 }

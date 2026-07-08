@@ -38,8 +38,8 @@ function AuthedLayout() {
     return null;
   }
 
-  // Admin routes have their own AdminShell — skip UserShell wrapper
-  if (pathname.startsWith("/admin")) {
+  // Admin routes have their own AdminShell, and attempts are fullscreen — skip UserShell wrapper
+  if (pathname.startsWith("/admin") || pathname.startsWith("/attempt")) {
     return <Outlet />;
   }
 

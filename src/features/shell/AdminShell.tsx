@@ -49,7 +49,9 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex h-full w-full overflow-hidden">
-      <aside className={`hidden flex-col border-r bg-card md:flex h-full shrink-0 transition-all duration-200 ${isCollapsed ? "w-12" : "w-60"}`}>
+      <aside
+        className={`hidden flex-col border-r bg-card md:flex h-full shrink-0 transition-all duration-200 ${isCollapsed ? "w-12" : "w-60"}`}
+      >
         <div className="flex h-11 items-center justify-between border-b px-2 font-semibold shrink-0 text-sm">
           {!isCollapsed && (
             <div className="flex items-center gap-2 truncate pl-1">
@@ -57,9 +59,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
               <span className="truncate">Admin console</span>
             </div>
           )}
-          {isCollapsed && (
-            <div className="h-5 w-5 rounded bg-primary mx-auto" />
-          )}
+          {isCollapsed && <div className="h-5 w-5 rounded bg-primary mx-auto" />}
           {!isCollapsed && (
             <button
               onClick={toggleSidebar}
@@ -104,7 +104,9 @@ export function AdminShell({ children }: { children: ReactNode }) {
             );
           })}
         </nav>
-        <div className={`space-y-1.5 border-t p-2 shrink-0 ${isCollapsed ? "flex flex-col items-center" : ""}`}>
+        <div
+          className={`space-y-1.5 border-t p-2 shrink-0 ${isCollapsed ? "flex flex-col items-center" : ""}`}
+        >
           {isCollapsed ? (
             <>
               <Button
@@ -133,7 +135,12 @@ export function AdminShell({ children }: { children: ReactNode }) {
             </>
           ) : (
             <>
-              <Button asChild variant="ghost" size="sm" className="w-full justify-start h-8 text-[11px] px-2.5 cursor-pointer">
+              <Button
+                asChild
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start h-8 text-[11px] px-2.5 cursor-pointer"
+              >
                 <Link to="/dashboard">
                   <ArrowLeft className="mr-1.5 h-3.5 w-3.5" /> Back to app
                 </Link>

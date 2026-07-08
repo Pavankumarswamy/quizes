@@ -71,6 +71,14 @@ function QuizDetail() {
 
       if (!attemptId) throw new Error("Failed to generate attempt ID");
 
+      try {
+        if (document.documentElement.requestFullscreen) {
+          await document.documentElement.requestFullscreen();
+        }
+      } catch (fullscreenError) {
+        console.warn("Fullscreen mode not supported or was blocked.", fullscreenError);
+      }
+
       const attemptData = {
         quizId,
         userId: user.uid,
