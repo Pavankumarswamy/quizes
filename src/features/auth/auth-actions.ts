@@ -4,6 +4,8 @@ import {
   signOut,
   updateProfile,
   sendPasswordResetEmail,
+  signInWithPopup,
+  GoogleAuthProvider,
 } from "firebase/auth";
 import { ref, serverTimestamp, set, get } from "firebase/database";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
@@ -39,4 +41,27 @@ export async function signOutUser() {
 
 export async function sendReset(email: string) {
   await sendPasswordResetEmail(getFirebaseAuth(), email);
+}
+
+export async function signInWithGoogle() {
+  const auth = getFirebaseAuth();
+  const provider = new GoogleAuthProvider();
+  const cred = await signInWithPopup(auth, provider);
+
+  const db = getFirebaseDb();
+  const userRef = ref(db, `users/${cred.user.uid}`);
+  const userSnap = await get(userRef);
+
+  if (!userSnap.exists()) {
+    const usersSnap = await get(ref(db, "users"));
+    const isFirst = !usersSnap.exists();
+
+    await set(userRef, {
+      email: cred.user.email || "",
+      displayName: cred.user.displayName || cred.user.email || "Learner",
+      role: isFirst ? "admin" : "user",
+      createdAt: serverTimestamp(),
+    });
+  }
+  return cred.user;
 }

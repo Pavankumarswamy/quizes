@@ -12,6 +12,7 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
+  LayoutGrid,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/features/auth/AuthProvider";
@@ -19,6 +20,8 @@ import { signOutUser } from "@/features/auth/auth-actions";
 
 const nav: Array<{ to: string; label: string; icon: typeof LayoutDashboard; exact?: boolean }> = [
   { to: "/admin", label: "Overview", icon: LayoutDashboard, exact: true },
+  { to: "/admin/homepage", label: "Homepage Manage", icon: LayoutGrid },
+  { to: "/admin/materials", label: "Materials", icon: BookOpen },
   { to: "/admin/categories", label: "Categories", icon: FolderTree },
   { to: "/admin/documents", label: "Documents", icon: FileText },
   { to: "/admin/generate", label: "AI generator", icon: Sparkles },

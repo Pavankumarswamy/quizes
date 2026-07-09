@@ -9,9 +9,12 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as MaterialsRouteImport } from './routes/materials'
+import { Route as ExamsRouteImport } from './routes/exams'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as MaterialsDocIdRouteImport } from './routes/materials.$docId'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated.profile'
 import { Route as AuthenticatedHistoryRouteImport } from './routes/_authenticated.history'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated.dashboard'
@@ -25,11 +28,23 @@ import { Route as AuthenticatedAttemptAttemptIdRouteImport } from './routes/_aut
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated.admin.users'
 import { Route as AuthenticatedAdminQuizzesRouteImport } from './routes/_authenticated.admin.quizzes'
 import { Route as AuthenticatedAdminQuestionsRouteImport } from './routes/_authenticated.admin.questions'
+import { Route as AuthenticatedAdminMaterialsRouteImport } from './routes/_authenticated.admin.materials'
+import { Route as AuthenticatedAdminHomepageRouteImport } from './routes/_authenticated.admin.homepage'
 import { Route as AuthenticatedAdminGenerateRouteImport } from './routes/_authenticated.admin.generate'
 import { Route as AuthenticatedAdminDocumentsRouteImport } from './routes/_authenticated.admin.documents'
 import { Route as AuthenticatedAdminCategoriesRouteImport } from './routes/_authenticated.admin.categories'
 import { Route as AuthenticatedAdminSyllabusDocIdRouteImport } from './routes/_authenticated.admin.syllabus.$docId'
 
+const MaterialsRoute = MaterialsRouteImport.update({
+  id: '/materials',
+  path: '/materials',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExamsRoute = ExamsRouteImport.update({
+  id: '/exams',
+  path: '/exams',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
@@ -43,6 +58,11 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const MaterialsDocIdRoute = MaterialsDocIdRouteImport.update({
+  id: '/$docId',
+  path: '/$docId',
+  getParentRoute: () => MaterialsRoute,
 } as any)
 const AuthenticatedProfileRoute = AuthenticatedProfileRouteImport.update({
   id: '/profile',
@@ -116,6 +136,18 @@ const AuthenticatedAdminQuestionsRoute =
     path: '/questions',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
+const AuthenticatedAdminMaterialsRoute =
+  AuthenticatedAdminMaterialsRouteImport.update({
+    id: '/materials',
+    path: '/materials',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
+const AuthenticatedAdminHomepageRoute =
+  AuthenticatedAdminHomepageRouteImport.update({
+    id: '/homepage',
+    path: '/homepage',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
 const AuthenticatedAdminGenerateRoute =
   AuthenticatedAdminGenerateRouteImport.update({
     id: '/generate',
@@ -144,13 +176,18 @@ const AuthenticatedAdminSyllabusDocIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/exams': typeof ExamsRoute
+  '/materials': typeof MaterialsRouteWithChildren
   '/admin': typeof AuthenticatedAdminRouteWithChildren
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/history': typeof AuthenticatedHistoryRoute
   '/profile': typeof AuthenticatedProfileRoute
+  '/materials/$docId': typeof MaterialsDocIdRoute
   '/admin/categories': typeof AuthenticatedAdminCategoriesRoute
   '/admin/documents': typeof AuthenticatedAdminDocumentsRoute
   '/admin/generate': typeof AuthenticatedAdminGenerateRoute
+  '/admin/homepage': typeof AuthenticatedAdminHomepageRoute
+  '/admin/materials': typeof AuthenticatedAdminMaterialsRoute
   '/admin/questions': typeof AuthenticatedAdminQuestionsRoute
   '/admin/quizzes': typeof AuthenticatedAdminQuizzesRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
@@ -165,12 +202,17 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/exams': typeof ExamsRoute
+  '/materials': typeof MaterialsRouteWithChildren
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/history': typeof AuthenticatedHistoryRoute
   '/profile': typeof AuthenticatedProfileRoute
+  '/materials/$docId': typeof MaterialsDocIdRoute
   '/admin/categories': typeof AuthenticatedAdminCategoriesRoute
   '/admin/documents': typeof AuthenticatedAdminDocumentsRoute
   '/admin/generate': typeof AuthenticatedAdminGenerateRoute
+  '/admin/homepage': typeof AuthenticatedAdminHomepageRoute
+  '/admin/materials': typeof AuthenticatedAdminMaterialsRoute
   '/admin/questions': typeof AuthenticatedAdminQuestionsRoute
   '/admin/quizzes': typeof AuthenticatedAdminQuizzesRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
@@ -187,13 +229,18 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/auth': typeof AuthRoute
+  '/exams': typeof ExamsRoute
+  '/materials': typeof MaterialsRouteWithChildren
   '/_authenticated/admin': typeof AuthenticatedAdminRouteWithChildren
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/history': typeof AuthenticatedHistoryRoute
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
+  '/materials/$docId': typeof MaterialsDocIdRoute
   '/_authenticated/admin/categories': typeof AuthenticatedAdminCategoriesRoute
   '/_authenticated/admin/documents': typeof AuthenticatedAdminDocumentsRoute
   '/_authenticated/admin/generate': typeof AuthenticatedAdminGenerateRoute
+  '/_authenticated/admin/homepage': typeof AuthenticatedAdminHomepageRoute
+  '/_authenticated/admin/materials': typeof AuthenticatedAdminMaterialsRoute
   '/_authenticated/admin/questions': typeof AuthenticatedAdminQuestionsRoute
   '/_authenticated/admin/quizzes': typeof AuthenticatedAdminQuizzesRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
@@ -210,13 +257,18 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
+    | '/exams'
+    | '/materials'
     | '/admin'
     | '/dashboard'
     | '/history'
     | '/profile'
+    | '/materials/$docId'
     | '/admin/categories'
     | '/admin/documents'
     | '/admin/generate'
+    | '/admin/homepage'
+    | '/admin/materials'
     | '/admin/questions'
     | '/admin/quizzes'
     | '/admin/users'
@@ -231,12 +283,17 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
+    | '/exams'
+    | '/materials'
     | '/dashboard'
     | '/history'
     | '/profile'
+    | '/materials/$docId'
     | '/admin/categories'
     | '/admin/documents'
     | '/admin/generate'
+    | '/admin/homepage'
+    | '/admin/materials'
     | '/admin/questions'
     | '/admin/quizzes'
     | '/admin/users'
@@ -252,13 +309,18 @@ export interface FileRouteTypes {
     | '/'
     | '/_authenticated'
     | '/auth'
+    | '/exams'
+    | '/materials'
     | '/_authenticated/admin'
     | '/_authenticated/dashboard'
     | '/_authenticated/history'
     | '/_authenticated/profile'
+    | '/materials/$docId'
     | '/_authenticated/admin/categories'
     | '/_authenticated/admin/documents'
     | '/_authenticated/admin/generate'
+    | '/_authenticated/admin/homepage'
+    | '/_authenticated/admin/materials'
     | '/_authenticated/admin/questions'
     | '/_authenticated/admin/quizzes'
     | '/_authenticated/admin/users'
@@ -275,10 +337,26 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   AuthRoute: typeof AuthRoute
+  ExamsRoute: typeof ExamsRoute
+  MaterialsRoute: typeof MaterialsRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/materials': {
+      id: '/materials'
+      path: '/materials'
+      fullPath: '/materials'
+      preLoaderRoute: typeof MaterialsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/exams': {
+      id: '/exams'
+      path: '/exams'
+      fullPath: '/exams'
+      preLoaderRoute: typeof ExamsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth': {
       id: '/auth'
       path: '/auth'
@@ -299,6 +377,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/materials/$docId': {
+      id: '/materials/$docId'
+      path: '/$docId'
+      fullPath: '/materials/$docId'
+      preLoaderRoute: typeof MaterialsDocIdRouteImport
+      parentRoute: typeof MaterialsRoute
     }
     '/_authenticated/profile': {
       id: '/_authenticated/profile'
@@ -391,6 +476,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminQuestionsRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/_authenticated/admin/materials': {
+      id: '/_authenticated/admin/materials'
+      path: '/materials'
+      fullPath: '/admin/materials'
+      preLoaderRoute: typeof AuthenticatedAdminMaterialsRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/_authenticated/admin/homepage': {
+      id: '/_authenticated/admin/homepage'
+      path: '/homepage'
+      fullPath: '/admin/homepage'
+      preLoaderRoute: typeof AuthenticatedAdminHomepageRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
     '/_authenticated/admin/generate': {
       id: '/_authenticated/admin/generate'
       path: '/generate'
@@ -426,6 +525,8 @@ interface AuthenticatedAdminRouteChildren {
   AuthenticatedAdminCategoriesRoute: typeof AuthenticatedAdminCategoriesRoute
   AuthenticatedAdminDocumentsRoute: typeof AuthenticatedAdminDocumentsRoute
   AuthenticatedAdminGenerateRoute: typeof AuthenticatedAdminGenerateRoute
+  AuthenticatedAdminHomepageRoute: typeof AuthenticatedAdminHomepageRoute
+  AuthenticatedAdminMaterialsRoute: typeof AuthenticatedAdminMaterialsRoute
   AuthenticatedAdminQuestionsRoute: typeof AuthenticatedAdminQuestionsRoute
   AuthenticatedAdminQuizzesRoute: typeof AuthenticatedAdminQuizzesRoute
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
@@ -437,6 +538,8 @@ const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
   AuthenticatedAdminCategoriesRoute: AuthenticatedAdminCategoriesRoute,
   AuthenticatedAdminDocumentsRoute: AuthenticatedAdminDocumentsRoute,
   AuthenticatedAdminGenerateRoute: AuthenticatedAdminGenerateRoute,
+  AuthenticatedAdminHomepageRoute: AuthenticatedAdminHomepageRoute,
+  AuthenticatedAdminMaterialsRoute: AuthenticatedAdminMaterialsRoute,
   AuthenticatedAdminQuestionsRoute: AuthenticatedAdminQuestionsRoute,
   AuthenticatedAdminQuizzesRoute: AuthenticatedAdminQuizzesRoute,
   AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
@@ -475,10 +578,24 @@ const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
   AuthenticatedRouteChildren,
 )
 
+interface MaterialsRouteChildren {
+  MaterialsDocIdRoute: typeof MaterialsDocIdRoute
+}
+
+const MaterialsRouteChildren: MaterialsRouteChildren = {
+  MaterialsDocIdRoute: MaterialsDocIdRoute,
+}
+
+const MaterialsRouteWithChildren = MaterialsRoute._addFileChildren(
+  MaterialsRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   AuthRoute: AuthRoute,
+  ExamsRoute: ExamsRoute,
+  MaterialsRoute: MaterialsRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
